@@ -165,9 +165,10 @@ public class MagnifierService extends Service {
 
     private void showLensOverlay() {
         if (lensView != null) return;
-        int lensPx = Math.max(240, Math.round(320 * getResources().getDisplayMetrics().density));
+        int lensPx = 20; // visible glass size in raw screen px
+        int touchPx = Math.round(96 * getResources().getDisplayMetrics().density); // invisible grab halo
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
-                lensPx, lensPx,
+                touchPx, touchPx,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                         | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN

@@ -5,7 +5,7 @@
     <string name="start">Start magnifier</string>
     <string name="stop">Stop capture</string>
     <string name="title">Pixel Magnifier</string>
-    <string name="help">Shows a floating magnifier glass over any app.\n\nDrag to move the glass, pinch to zoom (1–12×).\nThe crosshair marks the current pixel; its colour is shown in the readout.\nLong-press the glass to copy its #RRGGBB to the clipboard.</string>
+    <string name="help">Shows a 20×20 px floating magnifier glass over any app.\n\nDrag to move the glass, pinch to zoom (1–12×).\nThe crosshair marks the current pixel.\nLong-press the glass to copy its #RRGGBB to the clipboard.</string>
 
     <string name="status_overlay_missing">Display over other apps: NOT granted</string>
     <string name="status_overlay_have">Display over other apps: granted</string>

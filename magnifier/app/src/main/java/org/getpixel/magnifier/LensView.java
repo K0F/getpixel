@@ -15,20 +15,22 @@ import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.view.WindowManager;
+import android.widget.Toast;
 
 /**
- * The on-screen magnifier "glass". Draws a magnified, pixel-exact crop of the
+ * The on-screen magnifier "glass": a tiny 20x20 px pixel-exact crop of the
  * captured frame centred on the pixel under the glass centre, with a
- * crosshair and live colour readout.
+ * crosshair. The actual view is larger than the glass so the window is easy
+ * to grab; only the 20x20 centre is drawn.
  *
  * Interactions: drag = move the glass, pinch = zoom (1x-12x),
  * long-press = copy the centre pixel's #RRGGBB to the clipboard.
  */
 public class LensView extends View {
 
-    private static final int READOUT_BG = 0xCC111111;
-    private static final int READOUT_FG = 0xFFFFFFFF;
+    private static final int LENS_PX = 20;
     private static final int CROSSHAIR_ARGB = 0xFF33FF99;
+    private static final float CROSSHAIR_STROKE = 1f;
 
     private final WindowManager windowManager;
     private final WindowManager.LayoutParams params;
@@ -37,13 +39,15 @@ public class LensView extends View {
     private final GestureDetector gestureDetector;
     private final ScaleGestureDetector scaleDetector;
     private final Paint paint = new Paint();
-    private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private int[] cropScratch = new int[0];
     private Bitmap cropBitmap;
     private int cropW;
     private int cropH;
     private float zoom = 3f;
-    private String readoutText = "";
+    private float downRawX;
+    private float downRawY;
+    private int startX;
+    private int startY;
 
     public LensView(Context context, WindowManager wm, WindowManager.LayoutParams lp, FrameBuffer initial) {
         super(context);
@@ -64,18 +68,7 @@ public class LensView extends View {
                 return true;
             }
         });
-        textPaint.setColor(READOUT_FG);
-        textPaint.setTextSize(dp(13f));
-        textPaint.setAntiAlias(true);
         setBackgroundColor(Color.TRANSPARENT);
-    }
-
-    private float dp(float v) {
-        return v * getResources().getDisplayMetrics().density;
-    }
-
-    private int dpRound(float v) {
-        return Math.round(v * getResources().getDisplayMetrics().density);
     }
 
     /** UI-thread callback storing the latest captured frame. */
@@ -90,10 +83,18 @@ public class LensView extends View {
         scaleDetector.onTouchEvent(event);
         gestureDetector.onTouchEvent(event);
 
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN && event.getPointerCount() == 1) {
+            downRawX = event.getRawX();
+            downRawY = event.getRawY();
+            startX = params.x;
+            startY = params.y;
+            return true;
+        }
         if (event.getPointerCount() == 1 && !scaleDetector.isInProgress()
-                && event.getActionMasked() == MotionEvent.ACTION_MOVE) {
-            params.x += Math.round(event.getRawX());
-            params.y += Math.round(event.getRawY());
+                && action == MotionEvent.ACTION_MOVE) {
+            params.x = startX + Math.round(event.getRawX() - downRawX);
+            params.y = startY + Math.round(event.getRawY() - downRawY);
             clampPosition();
             windowManager.updateViewLayout(this, params);
             invalidate();
@@ -131,9 +132,8 @@ public class LensView extends View {
         if (cm != null) {
             cm.setPrimaryClip(ClipData.newPlainText("pixel", ColorUtil.hex(color)));
         }
-        readoutText = ColorUtil.report(cx, cy, color) + "  [" + getContext().getString(R.string.lens_copied)
-                + " " + ColorUtil.hex(color) + "]";
-        invalidate();
+        String msg = ColorUtil.hex(color) + " " + getContext().getString(R.string.lens_copied);
+        Toast.makeText(getContext(), msg, Toast.LENGTH_SHORT).show();
     }
 
     @Override
@@ -142,17 +142,20 @@ public class LensView extends View {
         FrameBuffer f = frame;
         int w = getWidth();
         int h = getHeight();
+        int gx = w / 2;
+        int gy = h / 2;
 
         if (!hasFrame || f == null) {
-            canvas.drawColor(0xCC000000);
-            textPaint.setTextAlign(Paint.Align.CENTER);
-            canvas.drawText(getContext().getString(R.string.lens_waiting), w / 2f, h / 2f, textPaint);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(0xCC000000);
+            canvas.drawRect(gx - LENS_PX / 2, gy - LENS_PX / 2,
+                    gx + LENS_PX / 2, gy + LENS_PX / 2, paint);
             return;
         }
 
         int cx = params.x + w / 2;
         int cy = params.y + h / 2;
-        int cropPx = LensMath.cropForZoom(Math.max(w, h), zoom);
+        int cropPx = LensMath.cropForZoom(LENS_PX, zoom);
 
         int[] origin = LensMath.cropOrigin(cx, cy, cropPx, cropPx, f.width, f.height);
         int left = origin[0];
@@ -172,18 +175,19 @@ public class LensView extends View {
             cropBitmap.setPixels(scratch, 0, cw, 0, 0, cw, ch);
 
             paint.setFilterBitmap(false);
+            paint.setStyle(Paint.Style.FILL);
             paint.setColor(Color.BLACK);
             canvas.drawColor(Color.BLACK);
-            canvas.drawBitmap(cropBitmap, null, new Rect(0, 0, w, h), paint);
+            Rect dst = new Rect(gx - LENS_PX / 2, gy - LENS_PX / 2, gx + LENS_PX / 2, gy + LENS_PX / 2);
+            canvas.drawBitmap(cropBitmap, null, dst, paint);
         } else {
-            canvas.drawColor(0xCC000000);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(0xCC000000);
+            canvas.drawRect(gx - LENS_PX / 2, gy - LENS_PX / 2,
+                    gx + LENS_PX / 2, gy + LENS_PX / 2, paint);
         }
 
-        drawCrosshair(canvas, w, h);
-
-        int color = f.pixelAt(cx, cy);
-        readoutText = ColorUtil.report(cx, cy, color);
-        drawReadout(canvas, readoutText);
+        drawCrosshair(canvas, gx, gy);
     }
 
     private int[] ensureCropScratch(int w, int h) {
@@ -194,36 +198,14 @@ public class LensView extends View {
         return cropScratch;
     }
 
-    private void drawCrosshair(Canvas canvas, int w, int h) {
-        float cx = w / 2f;
-        float cy = h / 2f;
-        paint.setStrokeWidth(dp(1.2f));
+    private void drawCrosshair(Canvas canvas, int gx, int gy) {
+        paint.setStrokeWidth(CROSSHAIR_STROKE);
         paint.setStyle(Paint.Style.STROKE);
         paint.setColor(CROSSHAIR_ARGB);
-        canvas.drawLine(cx, 0, cx, h, paint);
-        canvas.drawLine(0, cy, w, cy, paint);
-        canvas.drawCircle(cx, cy, dp(16f), paint);
+        int half = LENS_PX / 2;
+        canvas.drawLine(gx, gy - half, gx, gy + half, paint);
+        canvas.drawLine(gx - half, gy, gx + half, gy, paint);
         paint.setStyle(Paint.Style.FILL);
-        canvas.drawCircle(cx, cy, dp(2f), paint);
-    }
-
-    private void drawReadout(Canvas canvas, String text) {
-        Rect bounds = new Rect();
-        textPaint.setTextAlign(Paint.Align.LEFT);
-        textPaint.getTextBounds(text, 0, text.length(), bounds);
-        int pad = dpRound(10f);
-        float textW = bounds.width();
-        float textH = bounds.height();
-        float left = getWidth() / 2f - textW / 2f - pad;
-        float top = dpRound(8f);
-        float right = getWidth() / 2f + textW / 2f + pad;
-        float bottom = top + textH + pad * 2;
-        left = Math.max(0, left);
-        right = Math.min(getWidth(), right);
-        paint.setStyle(Paint.Style.FILL);
-        paint.setColor(READOUT_BG);
-        canvas.drawRoundRect(left, top, right, bottom, dpRound(6f), dpRound(6f), paint);
-        textPaint.setColor(READOUT_FG);
-        canvas.drawText(text, left + pad, bottom - pad, textPaint);
+        canvas.drawCircle(gx, gy, 1f, paint);
     }
 }
