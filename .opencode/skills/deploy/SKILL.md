@@ -53,53 +53,68 @@ adb devices        # must show "device", not "unauthorized"/"offline"
 adb install -r magnifier/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Verify it landed:
+A streamed install that ends with plain `Success` is the goal. Verify it
+landed:
 
 ```sh
 adb shell pm list packages | grep getpixel       # org.getpixel.magnifier
 adb shell dumpsys package org.getpixel.magnifier | grep -E "versionName|versionCode" | head
 ```
 
+**Proven on this device** (2026-09-12): first attempts failed with
+`INSTALL_FAILED_USER_RESTRICTED`. Resolution — the user had to enable *"Install
+via USB"* from the phone: firing `adb install` brings up a MIUI full-screen
+**"Správce instalací přes USB"** (USB install manager) listing the app with a
+toggle; flipping that ON (may demand a Mi-account verify) removes the
+restriction, after which a plain retry installs. The host cannot do the flip —
+see §4.
+
 ## 4. `INSTALL_FAILED_USER_RESTRICTED` (this phone MiUI/HyperOS quirk)
 
-Trigger: *"Install canceled by user"*. Causes & order of fixes:
+Trigger: *"Install canceled by user"*. What is and isn't possible from the
+host on THIS device:
 
-1. **"Install via USB"** in Developer options must be on. On HyperOS enabling it
-   may demand a Mi account sign-in / inserted SIM — the user does this on the
-   phone, it cannot be forced from adb.
-2. Toggle **"Install via USB"** off and on, or re-accept the on-phone *"Allow
-   USB install"* confirmation dialog that the host-side `adb install` fires.
-3. Retry via a pushed APK + `pm` (works when the restriction only hits the
-   streamed path):
+- **Cannot:** `input tap` / `input keyevent` → `SecurityException: needs
+  INJECT_EVENTS`; `pm grant` → needs `GRANT_RUNTIME_PERMISSIONS`; the
+  verifier `settings put` → needs `WRITE_SECURE_SETTINGS`. Treat all three as
+  unavailable and route the step to the phone screen instead.
+- **Can:** `uiautomator dump` + read the XML (see §5) to *see* what the phone
+  is showing, without needing image input.
+- **Works after the toggle is ON:** plain `adb install -r` (streamed path is
+  fine; the push + `pm install` workaround was unnecessary once the toggle was
+  enabled).
 
-   ```sh
-   adb push magnifier/app/build/outputs/apk/debug/app-debug.apk /data/local/tmp/app-debug.apk
-   adb shell pm install -r -t /data/local/tmp/app-debug.apk
-   ```
+Diagnose the on-phone UI while an install is in flight:
 
-4. Verifier toggles are NOT usable from host shell here (they need
-   `WRITE_SECURE_SETTINGS`):
+```sh
+adb shell dumpsys window | grep -iE "mCurrentFocus|mFocusedApp" | head -3
+adb shell uiautomator dump /data/local/tmp/ui.xml && adb shell cat /data/local/tmp/ui.xml
+```
 
-   ```sh
-   adb shell settings put global verifier_verify_adb_installs 0   # SecurityException: not available
-   ```
-   Expect denial — these are a dead end on this setup, mention only as a
-   possible fix for other phones where shell has the permission.
+Recognisable screens: `com.miui.securitycenter/...PackageManagerActivity` =
+the USB install manager (app + toggle); `com.android.vending/...
+PlayProtectDialogsActivity` = Google Play Protect showing on first sideload
+(usually non-blocking). Extract buttons/text with:
 
-Check what the on-screen UI is doing meanwhile: `adb shell dumpsys window |
-grep -i mCurrentFocus`.
+```sh
+adb shell cat /data/local/tmp/ui.xml | grep -oE '<node[^>]+>' \
+  | grep -oE '(text|content-desc)="[^"]{1,50}"' | sort -u   # this model → tell the user, don't tap
+```
 
 ## 5. Launch and pre-grant permissions
 
 ```sh
 adb shell am start -n org.getpixel.magnifier/org.getpixel.magnifier.MainActivity
-adb shell appops set org.getpixel.magnifier SYSTEM_ALERT_WINDOW allow   # floating glass
-adb shell appops set org.getpixel.magnifier POST_NOTIFICATIONS allow    # FGS on 13+
+adb shell appops set org.getpixel.magnifier SYSTEM_ALERT_WINDOW allow   # works from host
 ```
+Confirmed working: `SYSTEM_ALERT_WINDOW` via `appops set ... allow` →
+`allow; time=+Ns ago (running)`. `POST_NOTIFICATIONS` is NOT a valid op name on
+this device (`Unknown operation string`); grant it via the runtime prompt the
+app shows on first launch (permission controller takes focus), and the overlay
+"Display over other apps" dialog by the user.
 
-Screen capture is still started from the app UI (system dialog), as is the
-MediaProjection prompt — those can't be clicked from adb without an
-accessibility helper.
+Screen capture + MediaProjection are started from the app UI (system dialogs)
+and can't be clicked from adb — hand over to the user there.
 
 ## 6. Uninstall / iterate
 
