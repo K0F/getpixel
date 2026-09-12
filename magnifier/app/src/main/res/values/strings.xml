@@ -1,30 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Pixel Magnifier</string>
+    <string name="app_name">Pixel Pick</string>
 
-    <string name="start">Start magnifier</string>
-    <string name="stop">Stop capture</string>
-    <string name="title">Pixel Magnifier</string>
-    <string name="help">Shows a 20×20 px floating magnifier glass over any app.\n\nDrag to move the glass, pinch to zoom (1–12×).\nThe crosshair marks the current pixel.\nLong-press the glass to copy its #RRGGBB to the clipboard.</string>
-
-    <string name="status_overlay_missing">Display over other apps: NOT granted</string>
-    <string name="status_overlay_have">Display over other apps: granted</string>
-    <string name="status_notification_missing">Notification permission: NOT granted</string>
-    <string name="status_notification_have">Notification permission: granted</string>
-    <string name="status_overlay_needed">Please enable \u201cDisplay over other apps\u201d first.</string>
-    <string name="status_notification_needed">Please allow notifications so capture can keep running.</string>
-    <string name="status_capturing">Capture started. Magnifier is on screen.</string>
-    <string name="status_denied">Screen capture cancelled.</string>
-    <string name="status_overlay_ok">Overlay granted. Starting capture…</string>
-    <string name="status_overlay_no">Overlay still not granted.</string>
-    <string name="status_notification_ok">Thanks. Starting capture…</string>
-    <string name="status_notification_no">Notifications denied; continuing anyway.</string>
-
-    <string name="lens_waiting">waiting for capture…</string>
-    <string name="lens_copied">copied</string>
-
-    <string name="notif_title">Pixel Magnifier</string>
-    <string name="notif_text">Magnifier is active over other apps</string>
-    <string name="notif_stop">Stop</string>
-    <string name="notif_channel">Magnifier service</string>
+    <string name="picker_waiting">Starting camera…</string>
+    <string name="picker_hint_save">Tap anywhere to save the centre colour</string>
+    <string name="picker_hint_swatch">Tap a swatch to copy       Long-press to remove</string>
+    <string name="picker_add">+ Add %1$s</string>
+    <string name="picker_toggle_gallery">Gallery</string>
+    <string name="picker_toggle_camera">Camera</string>
+    <string name="picker_saved">Saved %1$s</string>
+    <string name="picker_copied">Copied %1$s</string>
+    <string name="picker_removed">Removed %1$s</string>
+    <string name="picker_permission">Camera permission needed for live sampling</string>
+    <string name="picker_decode_failed">Could not open that image</string>
 </resources>

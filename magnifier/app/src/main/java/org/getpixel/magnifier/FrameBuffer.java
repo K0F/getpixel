@@ -41,6 +41,21 @@ public final class FrameBuffer {
         }
     }
 
+    public static FrameBuffer fromArgb(int[] argb, int w, int h) {
+        if (argb == null || w <= 0 || h <= 0 || argb.length < w * h) {
+            throw new IllegalArgumentException("invalid ARGB source");
+        }
+        FrameBuffer fb = new FrameBuffer(w, h);
+        System.arraycopy(argb, 0, fb.pixels, 0, w * h);
+        return fb;
+    }
+
+    /** Sets one pixel (capture thread only). */
+    public void copyPixel(int x, int y, int argb) {
+        if (x < 0 || y < 0 || x >= width || y >= height) return;
+        pixels[y * width + x] = argb;
+    }
+
     /** Synchronously extracts a crop region into the caller's ARGB array. */
     public void copyRegion(int left, int top, int w, int h, int[] out) {
         for (int y = 0; y < h; y++) {

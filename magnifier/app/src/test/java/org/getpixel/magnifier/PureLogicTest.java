@@ -111,6 +111,49 @@ public final class PureLogicTest {
         eq("FF020309", Integer.toHexString(crop[4]).toUpperCase(), "crop (2,3)");
         eq("FF030309", Integer.toHexString(crop[5]).toUpperCase(), "crop (3,3)");
 
+        // --- ColorUtil.hexLc ------------------------------------------------
+        eq("#1c3c06", ColorUtil.hexLc(0xFF1C3C06), "hexLc lowercase");
+        eq("#0a0b0c", ColorUtil.hexLc(0x0A0B0C), "hexLc alpha dropped");
+
+        // --- Palette ---------------------------------------------------------
+        Palette p = new Palette();
+        check(p.size() == 0, "palette starts empty");
+        check(p.add("#AABBCC"), "palette add valid");
+        check(p.add("ddEeFf"), "palette add without hash + case");
+        eq("#ddeeff", p.get(1), "palette normalised lowercase");
+        check(p.add("#AABBCC"), "palette re-add duplicate");
+        eq("#aabbcc", p.get(p.size() - 1), "duplicate moved to end");
+        eq("2", Integer.toString(p.size()), "palette deduped size");
+        String enc = p.encode();
+        Palette p2 = Palette.decode(enc);
+        eq(enc, p2.encode(), "palette encode/decode round-trip");
+        check(p2.contains("#DDEEFF"), "decoded palette contains colour");
+        check(Palette.normalize("@xyz") == null, "palette rejects invalid hex");
+        check(Palette.normalize("#ABC").equals("#aabbcc"), "palette expands #RGB");
+        check(p.remove("#ddeeff"), "palette remove");
+        eq("1", Integer.toString(p.size()), "palette size after remove");
+        for (int i = 0; i < 30; i++) {
+            p.add(String.format("#%02x%02x%02x", i, 0, 0));
+        }
+        eq(Integer.toString(Palette.MAX_SIZE), Integer.toString(p.size()), "palette capped at MAX_SIZE");
+
+        // --- CamMath ------------------------------------------------------------------
+        int[] ds = CamMath.displaySize(1920, 1080, 1);
+        eq("1080x1920", ds[0] + "x" + ds[1], "displaySize 90");
+        ds = CamMath.displaySize(1080, 1920, 3);
+        eq("1920x1080", ds[0] + "x" + ds[1], "displaySize 270");
+        float[] rect = CamMath.displayRect(1000, 800, 400, 300);
+        check(Math.abs(rect[0]) < 1e-3 && Math.abs(rect[2] - 1000f) < 1e-3, "displayRect fills width");
+        check(Math.abs((rect[1] + rect[3]) - 800f) < 1e-2, "displayRect vertically centred");
+        int[] fr = CamMath.toFrame(200, 150, 1920, 1080, 0);
+        eq("200;150", fr[0] + ";" + fr[1], "toFrame identity ~ inside");
+        fr = CamMath.toFrame(200, 150, 1920, 1080, 1); // raw 90ccw: x'=v, y'=H-1-u
+        eq("150;879", fr[0] + ";" + fr[1], "toFrame 90 round-trip");
+        fr = CamMath.toFrame(-5, -5, 1920, 1080, 1);
+        check(fr[0] >= 0 && fr[1] >= 0, "toFrame clamps negatives");
+        fr = CamMath.toFrame(99999, 99999, 1920, 1080, 2);
+        eq("0;0", fr[0] + ";" + fr[1], "toFrame clamps oversize");
+
         return failures;
     }
 

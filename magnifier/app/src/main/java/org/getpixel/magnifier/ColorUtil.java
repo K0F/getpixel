@@ -20,6 +20,11 @@ public final class ColorUtil {
         return String.format("#%02X%02X%02X", (color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF);
     }
 
+    /** Lowercase "#rrggbb" (CSS/HTML style), as saved into the palette. */
+    public static String hexLc(int color) {
+        return String.format("#%02x%02x%02x", (color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF);
+    }
+
     /** Same textual report as the `get_pixel` CLI. */
     public static String report(int x, int y, int color) {
         int[] c = argb(color);

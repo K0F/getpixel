@@ -1,104 +1,87 @@
 package org.getpixel.magnifier;
 
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
-import android.media.projection.MediaProjectionManager;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
-import android.provider.Settings;
-import android.text.method.ScrollingMovementMethod;
-import android.view.View;
-import android.widget.Button;
-import android.widget.TextView;
 import android.widget.Toast;
 
-/** Entry point: grants overlay + notification permissions, then starts capture. */
+import java.io.InputStream;
+
+/** Colour picker: live camera preview or a gallery photo; palette is persisted. */
 public class MainActivity extends Activity {
 
-    private static final int REQ_MEDIA_PROJECTION = 1001;
-    private static final int REQ_OVERLAY = 1002;
+    private static final int REQ_CAMERA = 2001;
+    private static final int REQ_PICK_IMAGE = 2002;
+    private static final String PREFS = "picker";
+    private static final String KEY_PALETTE = "palette";
+    private static final int MAX_PIXELS = 2048;
 
-    private TextView status;
+    private CameraController camera;
+    private CameraPickerView pickerView;
+    private Palette palette = new Palette();
+    private boolean galleryMode;
+
+    private final CameraPickerView.Listener listener = new CameraPickerView.Listener() {
+        @Override
+        public void onSave(int argbColor) {
+            String hex = ColorUtil.hexLc(argbColor);
+            palette.add(hex);
+            persistPalette();
+            pickerView.setPalette(palette.asList());
+            toast(getString(R.string.picker_saved, hex));
+        }
+
+        @Override
+        public void onCopy(String hex) {
+            ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            if (cm != null) {
+                cm.setPrimaryClip(ClipData.newPlainText("pixel", hex));
+                toast(getString(R.string.picker_copied, hex));
+            }
+        }
+
+        @Override
+        public void onRemove(String hex) {
+            palette.remove(hex);
+            persistPalette();
+            pickerView.setPalette(palette.asList());
+            toast(getString(R.string.picker_removed, hex));
+        }
+
+        @Override
+        public void onToggleMode() {
+            if (galleryMode) {
+                switchToCamera();
+            } else {
+                switchToGallery();
+            }
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
-        status = findViewById(R.id.status);
-        status.setMovementMethod(new ScrollingMovementMethod());
-        if (savedInstanceState != null) {
-            status.setText(savedInstanceState.getCharSequence("status"));
-        }
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        palette = Palette.decode(prefs.getString(KEY_PALETTE, ""));
 
-        ((Button) findViewById(R.id.btn_start)).setOnClickListener(this::onStartClicked);
-        ((Button) findViewById(R.id.btn_stop)).setOnClickListener(v ->
-                stopService(new Intent(MainActivity.this, MagnifierService.class)));
+        pickerView = new CameraPickerView(this);
+        pickerView.setListener(listener);
+        pickerView.setPalette(palette.asList());
+        setContentView(pickerView);
 
-        refreshStatus();
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        refreshStatus();
-    }
-
-    @Override
-    protected void onSaveInstanceState(Bundle out) {
-        out.putCharSequence("status", status.getText());
-        super.onSaveInstanceState(out);
-    }
-
-    private void onStartClicked(View v) {
-        if (!Settings.canDrawOverlays(this)) {
-            appendStatus(getString(R.string.status_overlay_needed));
-            startActivityForResult(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:" + getPackageName())), REQ_OVERLAY);
-            return;
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
-                        != PackageManager.PERMISSION_GRANTED) {
-            appendStatus(getString(R.string.status_notification_needed));
-            requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 42);
-            return;
-        }
-        requestProjection();
-    }
-
-    private void requestProjection() {
-        MediaProjectionManager mpm = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
-        if (mpm == null) return;
-        startActivityForResult(mpm.createScreenCaptureIntent(), REQ_MEDIA_PROJECTION);
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == REQ_MEDIA_PROJECTION) {
-            if (resultCode == RESULT_OK && data != null) {
-                Intent svc = new Intent(this, MagnifierService.class);
-                svc.putExtra(MagnifierService.EXTRA_RESULT_CODE, resultCode);
-                svc.putExtra(MagnifierService.EXTRA_RESULT_DATA, data);
-                startForegroundService(svc);
-                appendStatus(getString(R.string.status_capturing));
-            } else {
-                appendStatus(getString(R.string.status_denied));
-            }
-        } else if (requestCode == REQ_OVERLAY) {
-            if (Settings.canDrawOverlays(this)) {
-                appendStatus(getString(R.string.status_overlay_ok));
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
-                        || checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
-                                == PackageManager.PERMISSION_GRANTED) {
-                    requestProjection();
-                }
-            } else {
-                appendStatus(getString(R.string.status_overlay_no));
-            }
+        if (checkSelfPermission(android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{android.Manifest.permission.CAMERA}, REQ_CAMERA);
+        } else {
+            startCamera();
         }
     }
 
@@ -106,23 +89,134 @@ public class MainActivity extends Activity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         boolean ok = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
-        appendStatus(ok ? getString(R.string.status_notification_ok)
-                        : getString(R.string.status_notification_no));
-        if (ok) requestProjection();
+        if (ok) {
+            startCamera();
+        } else {
+            toast(getString(R.string.picker_permission));
+        }
     }
 
-    private void refreshStatus() {
-        boolean overlay = Settings.canDrawOverlays(this);
-        boolean notif = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
-                || checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
-                        == PackageManager.PERMISSION_GRANTED;
-        appendStatus(getString(overlay ? R.string.status_overlay_have : R.string.status_overlay_missing));
-        appendStatus(getString(notif ? R.string.status_notification_have : R.string.status_notification_missing));
+    @Override
+    protected void onStart() {
+        super.onStart();
+        if (!galleryMode && camera == null
+                && checkSelfPermission(android.Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            startCamera();
+        }
     }
 
-    private void appendStatus(String line) {
-        CharSequence prev = status.getText();
-        String sep = (prev == null || prev.length() == 0) ? "" : "\n";
-        status.setText(prev + sep + line);
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (camera != null) {
+            camera.close();
+            camera = null;
+        }
+    }
+
+    private void startCamera() {
+        if (galleryMode || camera != null) return;
+        camera = new CameraController();
+        camera.open(this, new CameraController.Listener() {
+            @Override
+            public void onFrame(FrameBuffer f, int rot) {
+                if (!galleryMode) {
+                    pickerView.setGalleryMode(false, null);
+                    pickerView.onFrame(f, rot);
+                }
+            }
+
+            @Override
+            public void onError(String message) {
+                toast(message);
+            }
+        });
+        pickerView.setGalleryMode(false, null);
+    }
+
+    private void switchToGallery() {
+        galleryMode = true;
+        if (camera != null) {
+            camera.close();
+            camera = null;
+        }
+        pickForImage();
+    }
+
+    private void switchToCamera() {
+        galleryMode = false;
+        startCamera();
+    }
+
+    private FrameBuffer frameGallery;
+
+    private void pickForImage() {
+        Intent pick = new Intent(Intent.ACTION_GET_CONTENT);
+        pick.setType("image/*");
+        pick.addCategory(Intent.CATEGORY_OPENABLE);
+        startActivityForResult(pick, REQ_PICK_IMAGE);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_PICK_IMAGE) {
+            Uri uri = (resultCode == RESULT_OK && data != null) ? data.getData() : null;
+            onImagePicked(uri);
+        }
+    }
+
+    private void onImagePicked(Uri uri) {
+        if (uri == null) {
+            switchToCamera();
+            return;
+        }
+        try {
+            Bitmap bmp = decodeSampled(uri);
+            if (bmp == null) {
+                toast(getString(R.string.picker_decode_failed));
+                switchToCamera();
+                return;
+            }
+            int w = bmp.getWidth();
+            int h = bmp.getHeight();
+            int[] argb = new int[w * h];
+            bmp.getPixels(argb, 0, w, 0, 0, w, h);
+            bmp.recycle();
+            frameGallery = FrameBuffer.fromArgb(argb, w, h);
+            pickerView.setGalleryMode(true, frameGallery);
+        } catch (Exception e) {
+            toast(getString(R.string.picker_decode_failed));
+            switchToCamera();
+        }
+    }
+
+    private Bitmap decodeSampled(Uri uri) throws java.io.IOException {
+        ContentResolver cr = getContentResolver();
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        try (InputStream is = cr.openInputStream(uri)) {
+            BitmapFactory.decodeStream(is, null, bounds);
+        }
+        int longest = Math.max(bounds.outWidth, bounds.outHeight);
+        int sample = 1;
+        while (longest / sample / 2 >= MAX_PIXELS) {
+            sample *= 2;
+        }
+        BitmapFactory.Options opts = new BitmapFactory.Options();
+        opts.inSampleSize = sample;
+        try (InputStream is = cr.openInputStream(uri)) {
+            return BitmapFactory.decodeStream(is, null, opts);
+        }
+    }
+
+    private void persistPalette() {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putString(KEY_PALETTE, palette.encode())
+                .apply();
+    }
+
+    private void toast(String msg) {
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
     }
 }

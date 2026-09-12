@@ -25,6 +25,8 @@ $(JAVA_BUILD)/.stamp: \
 		magnifier/app/src/main/java/$(JAVA_PKG)/ColorUtil.java \
 		magnifier/app/src/main/java/$(JAVA_PKG)/LensMath.java \
 		magnifier/app/src/main/java/$(JAVA_PKG)/FrameBuffer.java \
+		magnifier/app/src/main/java/$(JAVA_PKG)/CamMath.java \
+		magnifier/app/src/main/java/$(JAVA_PKG)/Palette.java \
 		magnifier/app/src/test/java/$(JAVA_PKG)/PureLogicTest.java
 	mkdir -p $(JAVA_BUILD)
 	javac -d $(JAVA_BUILD) $^
