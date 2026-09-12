@@ -2,9 +2,9 @@ Categories:
   - Graphics
   - System
 License: Apache-2.0
-SourceCode: https://github.com/kof/getpixel
-IssueTracker: https://github.com/kof/getpixel/issues
-Changelog: https://github.com/kof/getpixel/releases
+SourceCode: https://github.com/K0F/getpixel
+IssueTracker: https://github.com/K0F/getpixel/issues
+Changelog: https://github.com/K0F/getpixel/releases
 
 Auto Name: Pixel Magnifier
 Name:
@@ -24,7 +24,7 @@ Description: |
   single pixels over an adb shell.
 
 RepoType: git
-Repo: https://github.com/kof/getpixel
+Repo: https://github.com/K0F/getpixel
 
 Builds:
   - versionName: 1.0.0
