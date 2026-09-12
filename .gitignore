@@ -1,0 +1,20 @@
+# C tool
+get_pixel
+/tests/run_tests
+/tests/fake_screencap
+/tests/java-build/
+
+# Android
+/magnifier/.gradle/
+/magnifier/build/
+/magnifier/app/build/
+/magnifier/local.properties
+/magnifier/.kotlin/
+
+# SDK / IDE
+local.properties
+.idea/
+*.iml
+
+# misc
+*.log

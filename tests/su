@@ -1,0 +1,4 @@
+#!/bin/sh
+# Fake `su` for the integration test: ignore "-c <cmd>" args and emit a
+# synthetic screencap stream via the shim in the same directory.
+exec "$(dirname "$0")/fake_screencap"

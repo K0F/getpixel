@@ -1,0 +1,44 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'org.getpixel.magnifier'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "org.getpixel.magnifier"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            // F-Droid signs with its own key, so we ship unsigned deterministically.
+            signingConfig null
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        // MediaProjection APIs are intentionally used across API levels.
+        disable 'IconMissingDensityFolder', 'AllowBackup'
+    }
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+}
+
+android {
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+}

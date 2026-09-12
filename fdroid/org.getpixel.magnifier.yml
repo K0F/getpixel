@@ -1,0 +1,41 @@
+Categories:
+  - Graphics
+  - System
+License: Apache-2.0
+SourceCode: https://github.com/kof/getpixel
+IssueTracker: https://github.com/kof/getpixel/issues
+Changelog: https://github.com/kof/getpixel/releases
+
+Auto Name: Pixel Magnifier
+Name:
+  en: Pixel Magnifier
+Summary: On-screen pixel magnifier with colour readout
+Description: |
+  A floating magnifying-glass overlay that lets you target any pixel on the
+  screen. Drag the glass to move it, pinch to zoom (1–12×); a crosshair marks
+  the pixel under the glass centre and a live readout shows its RGBA values
+  and #RRGGBB. A long-press copies the hex value to the clipboard.
+
+  Uses MediaProjection for capture, so it also works alongside non-rooted
+  devices; a foreground service (required by Android 14+) keeps the capture
+  alive while the glass floats over other apps.
+
+  This is the graphical companion to the project's get_pixel CLI, which reads
+  single pixels over an adb shell.
+
+RepoType: git
+Repo: https://github.com/kof/getpixel
+
+Builds:
+  - versionName: 1.0.0
+    versionCode: 1
+    commit: v1.0.0
+    subdir: magnifier
+    gradle:
+      - assembleRelease
+    output: app/build/outputs/apk/release/app-release-unsigned.apk
+
+AutoUpdateMode: Version v%v
+UpdateCheckMode: Tags
+CurrentVersion: "1.0.0"
+CurrentVersionCode: 1
