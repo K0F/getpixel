@@ -385,7 +385,15 @@ public class CameraPickerView extends View {
 
         textPaint.setTextSize(dp(12f));
         textPaint.setColor(0x99FFFFFF);
-        double[] luv = ColorMath.argbToLuv(color, light.white());
+        double[] luv;
+        double[] white = light.white();
+        if (useCal && cal != null && cal.isFitted() && cal.isColorimetric() && cal.white() != null) {
+            double[] fitWhite = cal.white();
+            luv = ColorMath.xyzToLuv(cal.applyXyz(color), fitWhite);
+            white = fitWhite;
+        } else {
+            luv = ColorMath.argbToLuv(color, white);
+        }
         canvas.drawText(getContext().getString(R.string.picker_luv,
                 ColorMath.fmt(luv[0], 1), ColorMath.fmt(luv[1], 1), ColorMath.fmt(luv[2], 1),
                 light.name), cx, dp(160f), textPaint);

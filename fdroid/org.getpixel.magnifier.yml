@@ -16,12 +16,15 @@ Description: |
   A live crosshair follows the finger over the full preview; a tap stores
   the picked colour into an on-device gallery with EXIF details.
 
-  The Cal chip builds a per-patch calibration against a ColorChecker (white
-  balance gains with a few taps, a full 3x3 linear-RGB matrix with several)
-  for profile-accurate colours. The Light chip switches the white point
-  between standard illuminants (D65, D50, A) and your own light source; the
-  RAW/CAL toggle keeps the uncalibrated capture too. The gallery exports
-  corrected colours and a per-colour report.
+  The Cal chip builds a per-patch calibration against a ColorChecker:
+  white balance gains from a couple of taps, or a full true-colorimetric
+  profile from 3+ taps that fits the sensor response to the chart's CIE XYZ
+  under your current light (Bradford-adapted to it), so L*u*v* is referenced
+  to the measured illuminant and corrected colours are the object's D65
+  appearance. The Light chip switches the white point between standard
+  illuminants (D65, D50, A) and your own light source; the RAW/CAL toggle
+  keeps the uncalibrated capture too. The gallery exports corrected colours
+  and a per-colour report.
 
   Small, offline, no network permissions. This is the graphical companion to
   the project's get_pixel CLI.
@@ -44,8 +47,15 @@ Builds:
     gradle:
       - assembleRelease
     output: app/build/outputs/apk/release/app-release-unsigned.apk
+  - versionName: 1.1.2
+    versionCode: 4
+    commit: v1.1.2
+    subdir: magnifier
+    gradle:
+      - assembleRelease
+    output: app/build/outputs/apk/release/app-release-unsigned.apk
 
 AutoUpdateMode: Version v%v
 UpdateCheckMode: Tags
-CurrentVersion: "1.1.1"
-CurrentVersionCode: 3
+CurrentVersion: "1.1.2"
+CurrentVersionCode: 4

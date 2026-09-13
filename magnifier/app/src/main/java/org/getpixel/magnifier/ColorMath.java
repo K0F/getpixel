@@ -13,6 +13,28 @@ public final class ColorMath {
             {0.0193339, 0.1191920, 0.9503041}
     };
 
+    /** Inverse (XYZ -> linear sRGB). */
+    public static final double[][] SRGB_XYZ_INV = {
+            {3.2404542, -1.5371385, -0.4985314},
+            {-0.9692660, 1.8760108, 0.0415560},
+            {0.0556434, -0.2040259, 1.0572252}
+    };
+
+    /** CIE D65 reference white, Yn = 1. */
+    public static final double[] D65_WHITE = {0.95047, 1.0, 1.08883};
+
+    /** Bradford CAT primaries and their inverse. */
+    private static final double[][] BRADFORD = {
+            {0.8951, 0.2664, -0.1614},
+            {-0.7502, 1.7135, 0.0367},
+            {0.0389, -0.0685, 1.0296}
+    };
+    private static final double[][] BRADFORD_INV = {
+            {0.9869929, -0.1470543, 0.1599627},
+            {0.4323053, 0.5183603, 0.0492912},
+            {-0.0085287, 0.0400428, 0.9684867}
+    };
+
     /** Inverse of the sRGB EOTF; c in [0,1]. */
     public static double srgbToLinear(double c) {
         if (c < 0.0) c = 0.0;
@@ -32,6 +54,29 @@ public final class ColorMath {
         return new double[]{srgbToLinear(r8 / 255.0), srgbToLinear(g8 / 255.0), srgbToLinear(b8 / 255.0)};
     }
 
+    /** Linear Bradford chromatic adaptation: srcWhite-spaced XYZ -> dstWhite-spaced XYZ. */
+    public static double[] bradford(double[] xyz, double[] srcWhite, double[] dstWhite) {
+        double[] l = new double[3];
+        double[] o = new double[3];
+        for (int i = 0; i < 3; i++) {
+            l[i] = mul(BRADFORD[i], xyz);
+            o[i] = mul(BRADFORD[i], srcWhite);
+        }
+        double[] o2 = new double[3];
+        for (int i = 0; i < 3; i++) o2[i] = mul(BRADFORD[i], dstWhite);
+        double[] adapted = new double[3];
+        for (int i = 0; i < 3; i++) adapted[i] = o2[i] > 0 ? l[i] * (o2[i] / o[i]) : 0.0;
+        double[] out = new double[3];
+        for (int i = 0; i < 3; i++) {
+            out[i] = mul(BRADFORD_INV[i], adapted);
+        }
+        return out;
+    }
+
+    private static double mul(double[] row, double[] v) {
+        return row[0] * v[0] + row[1] * v[1] + row[2] * v[2];
+    }
+
     /** Linear RGB -> CIE XYZ (Y in [0,1]). */
     public static double[] linearToXyz(double[] lin) {
         double[] xyz = new double[3];
@@ -39,6 +84,30 @@ public final class ColorMath {
             xyz[i] = SRGB_XYZ[i][0] * lin[0] + SRGB_XYZ[i][1] * lin[1] + SRGB_XYZ[i][2] * lin[2];
         }
         return xyz;
+    }
+
+    /** CIE XYZ -> linear sRGB (D65 viewing). */
+    public static double[] xyzToLinearRgb(double[] xyz) {
+        double[] rgb = new double[3];
+        for (int i = 0; i < 3; i++) {
+            rgb[i] = SRGB_XYZ_INV[i][0] * xyz[0] + SRGB_XYZ_INV[i][1] * xyz[1] + SRGB_XYZ_INV[i][2] * xyz[2];
+        }
+        return rgb;
+    }
+
+    /** CIE XYZ -> 0xFFRRGGBB sRGB (D65 viewing), channels clamped. */
+    public static int xyzToArgb(double[] xyz) {
+        double[] lin = xyzToLinearRgb(xyz);
+        int r = (int) Math.round(linearToSrgb(lin[0]) * 255);
+        int g = (int) Math.round(linearToSrgb(lin[1]) * 255);
+        int b = (int) Math.round(linearToSrgb(lin[2]) * 255);
+        if (r < 0) r = 0;
+        if (g < 0) g = 0;
+        if (b < 0) b = 0;
+        if (r > 255) r = 255;
+        if (g > 255) g = 255;
+        if (b > 255) b = 255;
+        return 0xFF000000 | (r << 16) | (g << 8) | b;
     }
 
     /** ARGB int -> CIE XYZ. */

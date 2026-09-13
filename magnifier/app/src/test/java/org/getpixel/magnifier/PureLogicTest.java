@@ -215,7 +215,7 @@ public final class PureLogicTest {
         // --- Calibration: WB fit maps a neutral measured to its reference ---------
         Calibration cal = new Calibration();
         check(!cal.isFitted(), "empty calibration not fitted");
-        cal.addSample(0xFFF3F3F2, Calibration.refHexArgb(18)); // white patch measured as white
+        cal.addSample(0xFFF3F3F2, 18, ColorMath.D65_WHITE); // white patch measured as white
         check(cal.isFitted(), "diagonal WB fit active");
         int applied = cal.apply(0xFFE8E4DA); // warmish measured -> cool toward reference
         int[] ap = ColorUtil.argb(applied);
@@ -223,24 +223,50 @@ public final class PureLogicTest {
 
         cal.clear();
         check(cal.samples() == 0 && !cal.isFitted(), "clear resets calibration");
-        cal.addSample(0xFFE8E4DA, Calibration.refHexArgb(18));
+        cal.addSample(0xFFE8E4DA, 18, ColorMath.D65_WHITE);
         // gaining the blue channel, the same warm patch must map to the reference white
         applied = cal.apply(0xFFE8E4DA);
         check(Math.abs(((applied >> 16) & 0xFF) - ((applied) & 0xFF)) < 12, "WB balances warm patch");
 
-        // --- Calibration: >=3 patches matrix, encode/decode round-trip -------------
+        // --- Calibration: >=3 patches colorimetric XYZ fit ------------------------
         Calibration cal3 = new Calibration();
-        cal3.addSample(Calibration.refHexArgb(0), Calibration.refHexArgb(0));
-        cal3.addSample(Calibration.refHexArgb(6), Calibration.refHexArgb(6));
-        cal3.addSample(Calibration.refHexArgb(18), Calibration.refHexArgb(18));
-        check(cal3.isFitted(), "matrix fit active with 3 patches");
-        applied = cal3.apply(Calibration.refHexArgb(6));
-        check(Math.abs(((applied >> 16) & 0xFF) - 214) < 4 && Math.abs(((applied >> 8) & 0xFF) - 126) < 4,
-                "identity-like matrix preserves measured colour");
+        cal3.addSample(Calibration.refHexArgb(0), 0, ColorMath.D65_WHITE);
+        cal3.addSample(Calibration.refHexArgb(6), 6, ColorMath.D65_WHITE);
+        cal3.addSample(Calibration.refHexArgb(18), 18, ColorMath.D65_WHITE);
+        check(cal3.isFitted() && cal3.isColorimetric(), "colorimetric XYZ fit active with 3 patches");
+        // relative colorimetry: the sampled white tap maps to display white
+        applied = cal3.apply(Calibration.refHexArgb(18));
+        check(((applied >> 16) & 0xFF) >= 250 && ((applied >> 8) & 0xFF) >= 250 && ((applied) & 0xFF) >= 250,
+                "white tap normalizes to display white");
+        // the fitted XYZ of a consistent tap equals the published chart XYZ (D65)
+        double[] chartXyz = cal3.applyXyz(Calibration.refHexArgb(6));
+        double[] refXyz = {0.5060 / 0.4070 * 0.2702, 0.2702, (1.0 - 0.5060 - 0.4070) / 0.4070 * 0.2702};
+        double yScale = 0.8325;
+        check(Math.abs(chartXyz[0] - refXyz[0] / yScale) < 1e-6
+                && Math.abs(chartXyz[1] - refXyz[1] / yScale) < 1e-6
+                && Math.abs(chartXyz[2] - refXyz[2] / yScale) < 1e-6,
+                "consistent tap fits published ColorChecker XYZ");
+        // L*u*v* under the fit's illuminant white (D65 here) matches the reference
+        double[] chartLuv = ColorMath.xyzToLuv(cal3.applyXyz(0xFFD67E2C), cal3.white());
+        double[] refLuv = ColorMath.xyzToLuv(new double[]{refXyz[0] / yScale, refXyz[1] / yScale, refXyz[2] / yScale},
+                ColorMath.D65_WHITE);
+        check(Math.abs(chartLuv[0] - refLuv[0]) < 1e-3 && Math.abs(chartLuv[1] - refLuv[1]) < 1e-3
+                && Math.abs(chartLuv[2] - refLuv[2]) < 1e-3, "L*u*v* true to measured illuminant");
         String enc3 = cal3.encode();
         Calibration cal3b = Calibration.decode(enc3);
-        check(cal3b.isFitted(), "decoded matrix is fitted");
+        check(cal3b.isFitted() && cal3b.isColorimetric(), "decoded matrix is colorimetric");
         check(cal3b.apply(0xFFD67E2C) == cal3.apply(0xFFD67E2C), "decoded matrix same result");
+
+        // --- Calibration: illuminant-adapted fit keeps neutral white neutral ------
+        Calibration calA = new Calibration();
+        double[] aWhite = LightSource.preset(2, null).white(); // illuminant A
+        calA.addSample(0xFFF3F3F2, 18, aWhite);
+        calA.addSample(0xFFD67E2C, 6, aWhite);
+        calA.addSample(0xFF8C5A44, 0, aWhite);
+        check(calA.isColorimetric(), "warm-light fit is colorimetric");
+        double[] whiteLuv = ColorMath.xyzToLuv(calA.applyXyz(0xFFF3F3F2), calA.white());
+        check(whiteLuv[0] > 99 && Math.abs(whiteLuv[1]) < 0.5 && Math.abs(whiteLuv[2]) < 0.5,
+                "A-adapted white tap reads as neutral");
         check(new Calibration().encode().isEmpty(), "unfitted calibration encodes empty");
         check(!Calibration.decode("").isFitted(), "empty decodes unfitted");
 

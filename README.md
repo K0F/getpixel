@@ -35,6 +35,12 @@ Camera: drag to aim, tap to save, pinch-free zoom inset, `#rrggbb` + L\*u\*v*
 readout. Gallery: tap a photo, + Add to save. Palette persists 12 colours.
 MIUI/HyperOS may require *Install via USB* enabled on first sideload.
 
+Calibration is true colorimetric: with 3+ ColorChecker taps the app fits a
+least-squares matrix from linear camera RGB to the chart's published CIE XYZ,
+Bradford-adapted to the current light, so L\*u\*v* is referenced to the
+measured illuminant and corrected colours are D65 appearance. Fewer taps fall
+back to per-channel white-balance gains.
+
 ## F-Droid
 
 Recipe: `fdroid/org.getpixel.magnifier.yml`. Releases are version-tagged

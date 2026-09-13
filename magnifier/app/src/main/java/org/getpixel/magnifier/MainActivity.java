@@ -114,7 +114,7 @@ public class MainActivity extends Activity {
         public void onCalSample(int argbColor) {
             if (cal == null) cal = new Calibration();
             int ndx = cal.samples();
-            cal.addSample(argbColor, Calibration.refHexArgb(ndx % Calibration.refCount()));
+            cal.addSample(argbColor, ndx % Calibration.refCount(), light.white());
             if (cal.isFitted()) useCal = true;
             if (lightIndex == 3 && cal.measuredWhiteXyz() != null) {
                 bst1Light = LightSource.measuredWhite(cal.measuredWhiteXyz(), "BST1");
