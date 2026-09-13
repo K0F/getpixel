@@ -10,21 +10,36 @@
         android:fillColor="#212121"
         android:pathData="M0,0h108v108h-108z" />
 
-    <!-- magnifier handle -->
+    <!-- viewfinder bump -->
+    <path
+        android:fillColor="#33FF99"
+        android:pathData="M46,28 h16 v7 h-16 z" />
+
+    <!-- camera body -->
     <path
         android:strokeColor="#33FF99"
-        android:strokeWidth="7"
-        android:strokeLineCap="round"
-        android:pathData="M72,72 L92,92" />
+        android:strokeWidth="6"
+        android:pathData="M28,34 h52 a8,8 0 0 1 8,8 v28 a8,8 0 0 1 -8,8 h-52 a8,8 0 0 1 -8,-8 v-28 a8,8 0 0 1 8,-8 z" />
 
     <!-- lens ring -->
     <path
         android:strokeColor="#33FF99"
-        android:strokeWidth="7"
-        android:pathData="M54,36 a24,24 0 1,0 0,48 a24,24 0 1,0 0,-48" />
+        android:strokeWidth="5"
+        android:pathData="M54,42 a14,14 0 1,0 0,28 a14,14 0 1,0 0,-28" />
 
-    <!-- pixel readout dot -->
+    <!-- lens glass -->
+    <path
+        android:fillColor="#0E1410"
+        android:pathData="M54,47 a9,9 0 1,0 0,18 a9,9 0 1,0 0,-18" />
+
+    <!-- target crosshair -->
+    <path
+        android:strokeColor="#33FF99"
+        android:strokeWidth="3"
+        android:pathData="M47,56 H61 M54,49 V63" />
+
+    <!-- target centre readout -->
     <path
         android:fillColor="#33FF99"
-        android:pathData="M54,60 m-4,0 a4,4 0 1,1 8,0 a4,4 0 1,1 -8,0" />
+        android:pathData="M54,52.5 m-3.5,0 a3.5,3.5 0 1,1 7,0 a3.5,3.5 0 1,1 -7,0" />
 </vector>

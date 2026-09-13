@@ -23,12 +23,16 @@ public class MainActivity extends Activity {
     private static final int REQ_PICK_IMAGE = 2002;
     private static final String PREFS = "picker";
     private static final String KEY_PALETTE = "palette";
+    private static final String KEY_NV21 = "nv21";
+    private static final String KEY_ROT = "rot";
     private static final int MAX_PIXELS = 2048;
 
     private CameraController camera;
     private CameraPickerView pickerView;
     private Palette palette = new Palette();
     private boolean galleryMode;
+    private boolean nv21 = false;
+    private int rotOffset;
 
     private final CameraPickerView.Listener listener = new CameraPickerView.Listener() {
         @Override
@@ -65,6 +69,26 @@ public class MainActivity extends Activity {
                 switchToGallery();
             }
         }
+
+        @Override
+        public void onToggleChroma() {
+            nv21 = !nv21;
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                    .putBoolean(KEY_NV21, nv21)
+                    .apply();
+            if (camera != null) camera.setNv21(nv21);
+            pickerView.setChroma(nv21);
+        }
+
+        @Override
+        public void onRotate() {
+            rotOffset = (rotOffset + 1) % 4;
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                    .putInt(KEY_ROT, rotOffset)
+                    .apply();
+            if (camera != null) camera.setRotOffset(rotOffset);
+            pickerView.setRotOffset(rotOffset);
+        }
     };
 
     @Override
@@ -72,10 +96,14 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         palette = Palette.decode(prefs.getString(KEY_PALETTE, ""));
+        nv21 = prefs.getBoolean(KEY_NV21, false);
+        rotOffset = prefs.getInt(KEY_ROT, 0);
 
         pickerView = new CameraPickerView(this);
         pickerView.setListener(listener);
         pickerView.setPalette(palette.asList());
+        pickerView.setChroma(nv21);
+        pickerView.setRotOffset(rotOffset);
         setContentView(pickerView);
 
         if (checkSelfPermission(android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
@@ -117,6 +145,8 @@ public class MainActivity extends Activity {
     private void startCamera() {
         if (galleryMode || camera != null) return;
         camera = new CameraController();
+        camera.setNv21(nv21);
+        camera.setRotOffset(rotOffset);
         camera.open(this, new CameraController.Listener() {
             @Override
             public void onFrame(FrameBuffer f, int rot) {
@@ -193,6 +223,15 @@ public class MainActivity extends Activity {
 
     private Bitmap decodeSampled(Uri uri) throws java.io.IOException {
         ContentResolver cr = getContentResolver();
+        int orientation = 0;
+        try (InputStream is = cr.openInputStream(uri)) {
+            android.media.ExifInterface exif = new android.media.ExifInterface(is);
+            orientation = exif.getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION,
+                    android.media.ExifInterface.ORIENTATION_NORMAL);
+        } catch (Throwable ignored) {
+            orientation = android.media.ExifInterface.ORIENTATION_NORMAL;
+        }
+
         BitmapFactory.Options bounds = new BitmapFactory.Options();
         bounds.inJustDecodeBounds = true;
         try (InputStream is = cr.openInputStream(uri)) {
@@ -205,9 +244,35 @@ public class MainActivity extends Activity {
         }
         BitmapFactory.Options opts = new BitmapFactory.Options();
         opts.inSampleSize = sample;
+        Bitmap bmp;
         try (InputStream is = cr.openInputStream(uri)) {
-            return BitmapFactory.decodeStream(is, null, opts);
+            bmp = BitmapFactory.decodeStream(is, null, opts);
         }
+        return rotateByExif(bmp, orientation);
+    }
+
+    /** Applies EXIF orientation (90/180/270) so gallery photos show upright. */
+    private Bitmap rotateByExif(Bitmap bmp, int orientation) {
+        if (bmp == null) return null;
+        int deg;
+        switch (orientation) {
+            case android.media.ExifInterface.ORIENTATION_ROTATE_180:
+                deg = 180;
+                break;
+            case android.media.ExifInterface.ORIENTATION_ROTATE_90:
+                deg = 90;
+                break;
+            case android.media.ExifInterface.ORIENTATION_ROTATE_270:
+                deg = 270;
+                break;
+            default:
+                return bmp;
+        }
+        android.graphics.Matrix m = new android.graphics.Matrix();
+        m.postRotate(deg);
+        Bitmap out = Bitmap.createBitmap(bmp, 0, 0, bmp.getWidth(), bmp.getHeight(), m, true);
+        if (out != bmp) bmp.recycle();
+        return out;
     }
 
     private void persistPalette() {

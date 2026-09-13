@@ -28,6 +28,10 @@ public class CameraPickerView extends View {
         void onRemove(String hex);
 
         void onToggleMode();
+
+        void onToggleChroma();
+
+        void onRotate();
     }
 
     private static final int INSET_DP = 96;
@@ -46,16 +50,21 @@ public class CameraPickerView extends View {
     private volatile int rot;
     private float zoom = 3f;
     private Bitmap previewBitmap;
+    private int[] scratch;
     private int cachedPixels = -1;
     private List<String> palette = java.util.Collections.emptyList();
     private int currentIndex = -1;
     private boolean galleryMode;
     private float focusX = -1f;
     private float focusY = -1f;
+    private float downX;
+    private float downY;
     private RectF addButtonRect;
     private RectF modeButtonRect;
-    private float lastRawX;
-    private float lastRawY;
+    private RectF chromaButtonRect;
+    private RectF rotButtonRect;
+    private boolean nv21Order = true;
+    private int rotOffsetQuarters;
 
     public CameraPickerView(Context context) {
         super(context);
@@ -103,6 +112,18 @@ public class CameraPickerView extends View {
         invalidate();
     }
 
+    /** Reflects the current interleaved chroma ordering for the UV chip label. */
+    public void setChroma(boolean nv21) {
+        this.nv21Order = nv21;
+        invalidate();
+    }
+
+    /** Rotation calibration offset (0..3 quarter-turns) for the ⟳ chip label. */
+    public void setRotOffset(int quarters) {
+        this.rotOffsetQuarters = ((quarters % 4) + 4) % 4;
+        invalidate();
+    }
+
     public void setPalette(List<String> colors) {
         this.palette = colors == null ? java.util.Collections.emptyList() : colors;
         currentIndex = -1;
@@ -146,11 +167,20 @@ public class CameraPickerView extends View {
 
     /** Raw frame coords of the pixel under the focus point. */
     private int[] focusPixel() {
-        FrameBuffer f = frame;
-        if (f == null) return new int[]{0, 0};
         float[] rect = displayRectOf();
         if (rect == null) return new int[]{0, 0};
-        return CamMath.toFrame(focusX() - rect[0], focusY() - rect[1], f.width, f.height, rot);
+        FrameBuffer f = frame;
+        float[] g = focusGrid(rect);
+        return CamMath.toFrame(g[0], g[1], f.width, f.height, rot);
+    }
+
+    /** Crosshair position in the upright display grid (frame-pixel units). */
+    private float[] focusGrid(float[] rect) {
+        FrameBuffer f = frame;
+        int[] ds = CamMath.displaySize(f.width, f.height, rot);
+        float sx = (rect[2] - rect[0]) / (float) ds[0];
+        float sy = (rect[3] - rect[1]) / (float) ds[1];
+        return new float[]{(focusX() - rect[0]) / sx, (focusY() - rect[1]) / sy};
     }
 
     @Override
@@ -171,43 +201,72 @@ public class CameraPickerView extends View {
         float[] rect = displayRectOf();
         drawPreview(canvas, f, rect);
 
-        int[] mid = CamMath.toFrame(focusX() - rect[0], focusY() - rect[1], f.width, f.height, rot);
+        int[] mid = focusPixel();
         int focusColor = f.pixelAt(mid[0], mid[1]);
         String hex = ColorUtil.hexLc(focusColor);
 
-        drawInset(canvas, f, mid[0], mid[1]);
+        drawInset(canvas, f, rect);
         drawReadout(canvas, focusColor, hex);
         drawCrosshair(canvas);
         drawModeButton(canvas);
+        if (!galleryMode) {
+            drawChromaButton(canvas);
+            drawRotateButton(canvas);
+        }
         if (galleryMode) drawAddButton(canvas, hex);
         drawPalette(canvas, hex);
     }
 
     private void drawPreview(Canvas canvas, FrameBuffer f, float[] rect) {
-        int w = f.width;
-        int h = f.height;
-        int need = w * h;
-        if (previewBitmap == null || previewBitmap.getWidth() != w || previewBitmap.getHeight() != h
+        int[] ds = CamMath.displaySize(f.width, f.height, rot);
+        int dw = ds[0];
+        int dh = ds[1];
+        int need = dw * dh;
+        if (previewBitmap == null || previewBitmap.getWidth() != dw || previewBitmap.getHeight() != dh
                 || cachedPixels != need) {
             if (previewBitmap != null) previewBitmap.recycle();
-            previewBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            previewBitmap = Bitmap.createBitmap(dw, dh, Bitmap.Config.ARGB_8888);
             cachedPixels = need;
         }
-        int[] scratch = new int[need];
-        f.copyRegion(0, 0, w, h, scratch);
-        previewBitmap.setPixels(scratch, 0, w, 0, 0, w, h);
+        if (scratch == null || scratch.length < need) {
+            scratch = new int[need];
+        }
+        if (rot % 4 == 0) {
+            f.copyRegion(0, 0, f.width, f.height, scratch);
+        } else {
+            int q = ((rot % 4) + 4) % 4;
+            for (int dy = 0; dy < dh; dy++) {
+                int base = dy * dw;
+                for (int dx = 0; dx < dw; dx++) {
+                    int fx;
+                    int fy;
+                    switch (q) {
+                        case 1: fx = dy;         fy = f.height - 1 - dx; break;
+                        case 2: fx = f.width - 1 - dx; fy = f.height - 1 - dy; break;
+                        default: fx = f.width - 1 - dy; fy = dx;             break;
+                    }
+                    scratch[base + dx] = f.pixelAt(fx, fy);
+                }
+            }
+        }
+        previewBitmap.setPixels(scratch, 0, dw, 0, 0, dw, dh);
         paint.setFilterBitmap(true);
         canvas.drawBitmap(previewBitmap, null, new RectF(rect[0], rect[1], rect[2], rect[3]), paint);
     }
 
-    private void drawInset(Canvas canvas, FrameBuffer f, int midX, int midY) {
+    private void drawInset(Canvas canvas, FrameBuffer f, float[] rect) {
+        int[] ds = CamMath.displaySize(f.width, f.height, rot);
+        int dw = ds[0];
+        int dh = ds[1];
         int side = dpRound(INSET_DP);
         int cropPx = LensMath.cropForZoom(side, zoom);
-        int[] origin = LensMath.cropOrigin(midX, midY, cropPx, cropPx, f.width, f.height);
+        float[] g = focusGrid(rect);
+        int[] origin = LensMath.cropOrigin(Math.round(g[0]), Math.round(g[1]),
+                cropPx, cropPx, dw, dh);
         int left = origin[0];
         int top = origin[1];
-        int cw = Math.min(cropPx, Math.max(0, f.width - left));
-        int ch = Math.min(cropPx, Math.max(0, f.height - top));
+        int cw = Math.min(cropPx, Math.max(0, dw - left));
+        int ch = Math.min(cropPx, Math.max(0, dh - top));
 
         int right = getWidth() - dpRound(10f);
         int topY = dpRound(46f);
@@ -219,7 +278,15 @@ public class CameraPickerView extends View {
 
         if (cw > 0 && ch > 0) {
             int[] crop = new int[cw * ch];
-            f.copyRegion(left, top, cw, ch, crop);
+            int[] raw = new int[2];
+            for (int dy = 0; dy < ch; dy++) {
+                int by = top + dy;
+                int base = dy * cw;
+                for (int dx = 0; dx < cw; dx++) {
+                    CamMath.toFrame(left + dx, by, f.width, f.height, rot, raw);
+                    crop[base + dx] = f.pixelAt(raw[0], raw[1]);
+                }
+            }
             Bitmap cropBmp = Bitmap.createBitmap(cw, ch, Bitmap.Config.ARGB_8888);
             cropBmp.setPixels(crop, 0, cw, 0, 0, cw, ch);
             paint.setFilterBitmap(false);
@@ -280,6 +347,40 @@ public class CameraPickerView extends View {
         paint.setColor(0xE6323B46);
         canvas.drawRoundRect(r, dpRound(18f), dpRound(18f), paint);
         textPaint.setColor(Color.WHITE);
+        canvas.drawText(label, r.centerX(), r.bottom - dp(10f), textPaint);
+    }
+
+    private void drawChromaButton(Canvas canvas) {
+        String label = nv21Order ? "NV21" : "NV12";
+        textPaint.setTextSize(dp(13f));
+        textPaint.setTextAlign(Paint.Align.CENTER);
+        float tw = textPaint.measureText(label);
+        float pad = dp(14f);
+        float left = modeButtonRect == null ? dp(10f) : modeButtonRect.left;
+        float top = (modeButtonRect == null ? dp(10f) : modeButtonRect.bottom) + dp(6f);
+        RectF r = new RectF(left, top, left + tw + pad * 2, top + dp(36f));
+        chromaButtonRect = r;
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(0xE6323B46);
+        canvas.drawRoundRect(r, dpRound(18f), dpRound(18f), paint);
+        textPaint.setColor(0xFFCCFFE0);
+        canvas.drawText(label, r.centerX(), r.bottom - dp(10f), textPaint);
+    }
+
+    private void drawRotateButton(Canvas canvas) {
+        String label = getContext().getString(R.string.picker_rotate, ((rot % 4) + 4) % 4 * 90);
+        textPaint.setTextSize(dp(13f));
+        textPaint.setTextAlign(Paint.Align.CENTER);
+        float tw = textPaint.measureText(label);
+        float pad = dp(14f);
+        float left = chromaButtonRect == null ? dp(10f) : chromaButtonRect.left;
+        float top = (chromaButtonRect == null ? dp(10f) : chromaButtonRect.bottom) + dp(6f);
+        RectF r = new RectF(left, top, left + tw + pad * 2, top + dp(36f));
+        rotButtonRect = r;
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(0xE6323B46);
+        canvas.drawRoundRect(r, dpRound(18f), dpRound(18f), paint);
+        textPaint.setColor(0xFFDDE9FF);
         canvas.drawText(label, r.centerX(), r.bottom - dp(10f), textPaint);
     }
 
@@ -354,9 +455,14 @@ public class CameraPickerView extends View {
         textPaint.setTextAlign(Paint.Align.LEFT);
         textPaint.setTextSize(dp(10f));
         textPaint.setColor(0xFF999999);
-        String hint = (n == 0)
-                ? getContext().getString(R.string.picker_hint_save)
-                : getContext().getString(R.string.picker_hint_swatch);
+        String hint;
+        if (galleryMode) {
+            hint = getContext().getString(R.string.picker_hint_gallery);
+        } else if (n == 0) {
+            hint = getContext().getString(R.string.picker_hint_save);
+        } else {
+            hint = getContext().getString(R.string.picker_hint_swatch);
+        }
         canvas.drawText(hint, pad, panelTop - dp(4f), textPaint);
     }
 
@@ -384,6 +490,15 @@ public class CameraPickerView extends View {
         return -1;
     }
 
+    /** True when the press started on a UI control (palette, buttons). */
+    private boolean inControls(float x, float y) {
+        if (swatchAt(x, y) >= 0) return true;
+        if (modeButtonRect != null && modeButtonRect.contains(x, y)) return true;
+        if (chromaButtonRect != null && chromaButtonRect.contains(x, y)) return true;
+        if (rotButtonRect != null && rotButtonRect.contains(x, y)) return true;
+        return galleryMode && addButtonRect != null && addButtonRect.contains(x, y);
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         scaleDetector.onTouchEvent(event);
@@ -392,14 +507,20 @@ public class CameraPickerView extends View {
         int action = event.getActionMasked();
         switch (action) {
             case MotionEvent.ACTION_DOWN:
-                lastRawX = event.getRawX();
-                lastRawY = event.getRawY();
+                downX = event.getX();
+                downY = event.getY();
                 return true;
             case MotionEvent.ACTION_UP: {
-                float dx = Math.abs(event.getRawX() - lastRawX);
-                float dy = Math.abs(event.getRawY() - lastRawY);
-                if (!scaleDetector.isInProgress() && dx < dp(24f) && dy < dp(24f)) {
-                    handleTap(event.getX(), event.getY());
+                float dx = Math.abs(event.getX() - downX);
+                float dy = Math.abs(event.getY() - downY);
+                if (!scaleDetector.isInProgress()) {
+                    if (dx >= dp(10f) || dy >= dp(10f)) {
+                        if (!inControls(downX, downY)) {
+                            moveFocus(event.getX(), event.getY());
+                        }
+                    } else {
+                        handleTap(event.getX(), event.getY());
+                    }
                 }
                 return true;
             }
@@ -412,6 +533,16 @@ public class CameraPickerView extends View {
         if (modeButtonRect != null && modeButtonRect.contains(x, y)) {
             Listener l = listener;
             if (l != null) l.onToggleMode();
+            return;
+        }
+        if (chromaButtonRect != null && chromaButtonRect.contains(x, y)) {
+            Listener l = listener;
+            if (l != null) l.onToggleChroma();
+            return;
+        }
+        if (rotButtonRect != null && rotButtonRect.contains(x, y)) {
+            Listener l = listener;
+            if (l != null) l.onRotate();
             return;
         }
         int swatch = swatchAt(x, y);

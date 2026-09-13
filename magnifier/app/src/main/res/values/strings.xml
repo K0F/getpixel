@@ -3,9 +3,11 @@
     <string name="app_name">Pixel Pick</string>
 
     <string name="picker_waiting">Starting camera…</string>
-    <string name="picker_hint_save">Tap anywhere to save the centre colour</string>
-    <string name="picker_hint_swatch">Tap a swatch to copy       Long-press to remove</string>
+    <string name="picker_hint_save">Drag to move the crosshair · tap to save</string>
+    <string name="picker_hint_swatch">Tap a swatch to copy · Long-press to remove</string>
+    <string name="picker_hint_gallery">Tap to set the target · + Add saves</string>
     <string name="picker_add">+ Add %1$s</string>
+    <string name="picker_rotate">⟳ %1$d°</string>
     <string name="picker_toggle_gallery">Gallery</string>
     <string name="picker_toggle_camera">Camera</string>
     <string name="picker_saved">Saved %1$s</string>

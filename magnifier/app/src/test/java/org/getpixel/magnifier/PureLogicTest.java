@@ -154,6 +154,29 @@ public final class PureLogicTest {
         fr = CamMath.toFrame(99999, 99999, 1920, 1080, 2);
         eq("0;0", fr[0] + ";" + fr[1], "toFrame clamps oversize");
 
+        // --- CamMath int-array API (used by the magnifier inset) ----------------------
+        // Inset crop is sampled in display space; its centre must equal the crosshair's
+        // raw pixel (the hex readout), for every rotation quarter.
+        int[] raw = new int[2];
+        for (int q = 0; q < 4; q++) {
+            CamMath.toFrame(540, 960, 1920, 1080, q, raw);
+            int[] floatApi = CamMath.toFrame((float) 540, (float) 960, 1920, 1080, q);
+            eq(raw[0] + ";" + raw[1],
+               floatApi[0] + ";" + floatApi[1],
+               "int API matches float API q=" + q);
+            check(raw[0] >= 0 && raw[0] < 1920 && raw[1] >= 0 && raw[1] < 1080,
+                    "inset centre in raw bounds q=" + q);
+        }
+        int[] centre = CamMath.toFrame(540, 960, 1920, 1080, 1, new int[2]);
+        eq("960;539", centre[0] + ";" + centre[1], "inset centre == focus pixel (q=1)");
+        centre = CamMath.toFrame(540, 960, 1920, 1080, 3, new int[2]);
+        eq("959;540", centre[0] + ";" + centre[1], "inset centre == focus pixel (q=3)");
+        // The display corner (frame's last pixel is top-left in display for q=1).
+        int[] corner = CamMath.toFrame(0, 1919, 1920, 1080, 1, new int[2]);
+        eq("1919;1079", corner[0] + ";" + corner[1], "display corner q=1 in range");
+        corner = CamMath.toFrame(1079, 0, 1920, 1080, 1, new int[2]);
+        eq("0;0", corner[0] + ";" + corner[1], "display origin q=1");
+
         return failures;
     }
 

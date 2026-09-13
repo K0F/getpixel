@@ -32,9 +32,19 @@ public final class CamMath {
      * (dx, dy) is relative to the displayed rect origin. Returns {frameX, frameY}.
      */
     public static int[] toFrame(float dx, float dy, int frameW, int frameH, int quarters) {
+        int[] out = new int[2];
+        toFrameImpl(dx, dy, frameW, frameH, quarters, out);
+        return out;
+    }
+
+    /** Integer display-pixel variant writing into `out` (avoids per-pixel allocation). */
+    public static int[] toFrame(int dx, int dy, int frameW, int frameH, int quarters, int[] out) {
+        toFrameImpl(dx, dy, frameW, frameH, quarters, out);
+        return out;
+    }
+
+    private static void toFrameImpl(float u, float v, int frameW, int frameH, int quarters, int[] out) {
         quarters = ((quarters % 4) + 4) % 4;
-        float u = dx;
-        float v = dy;
         int fx;
         int fy;
         switch (quarters) {
@@ -58,6 +68,7 @@ public final class CamMath {
         if (fy < 0) fy = 0;
         if (fx >= frameW) fx = frameW - 1;
         if (fy >= frameH) fy = frameH - 1;
-        return new int[]{fx, fy};
+        out[0] = fx;
+        out[1] = fy;
     }
 }

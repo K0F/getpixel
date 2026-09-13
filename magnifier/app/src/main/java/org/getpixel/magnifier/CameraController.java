@@ -41,8 +41,24 @@ public final class CameraController {
     private boolean running;
     private Listener listener;
     private FrameBuffer frame;
-    private int rotQuarters;
+    private int baseRotQuarters;
+    private int rotOffsetQuarters;
     private boolean useYuv;
+    private volatile boolean nv21 = false;
+
+    /** Sets the interleaved chroma ordering (NV21 = V-first), e.g. from the UV chip. */
+    public void setNv21(boolean nv21) {
+        this.nv21 = nv21;
+    }
+
+    /** Extra quarter-turns (0-3, clockwise) applied on top of the sensor/display base. */
+    public void setRotOffset(int quarters) {
+        this.rotOffsetQuarters = ((quarters % 4) + 4) % 4;
+    }
+
+    public int effectiveRotQuarters() {
+        return ((baseRotQuarters + rotOffsetQuarters) % 4 + 4) % 4;
+    }
 
     public void open(Context context, Listener listener) {
         this.listener = listener;
@@ -58,7 +74,7 @@ public final class CameraController {
             CameraCharacteristics cc = cameraManager.getCameraCharacteristics(cameraId);
             int sensorOrientation = cc.get(CameraCharacteristics.SENSOR_ORIENTATION);
             int displayRotation = displayRotation(context);
-            rotQuarters = ((sensorOrientation + displayRotation + 360) % 360) / 90;
+            baseRotQuarters = ((sensorOrientation + displayRotation + 360) % 360) / 90;
             running = true;
 
             int[] size = choosePreviewSize(cc);
@@ -166,10 +182,10 @@ public final class CameraController {
                 CaptureRequest.Builder req = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
                 req.addTarget(imageReader.getSurface());
                 req.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
-                req.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON);
+req.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON);
 
-                camera.createCaptureSession(Collections.singletonList(imageReader.getSurface()),
-                        new CameraCaptureSession.StateCallback() {
+                    camera.createCaptureSession(Collections.singletonList(imageReader.getSurface()),
+                            new CameraCaptureSession.StateCallback() {
                             @Override
                             public void onConfigured(CameraCaptureSession s) {
                                 session = s;
@@ -224,7 +240,7 @@ public final class CameraController {
             }
             frame.markUpdated(android.os.SystemClock.uptimeMillis());
             FrameBuffer f = frame;
-            int rot = rotQuarters;
+            int rot = effectiveRotQuarters();
             Listener l = listener;
             if (l != null) {
                 mainHandler.post(() -> l.onFrame(f, rot));
@@ -269,7 +285,7 @@ public final class CameraController {
                 p0.getBuffer(), p1.getBuffer(), p2.getBuffer(),
                 p0.getRowStride(), p1.getRowStride(), p2.getRowStride(),
                 p1.getPixelStride(), p2.getPixelStride(),
-                frame.width, frame.height);
+                frame.width, frame.height, nv21);
         for (int y = 0; y < frame.height; y++) {
             for (int x = 0; x < frame.width; x++) {
                 frame.copyPixel(x, y, Yuv420.argbAt(planes, x, y));

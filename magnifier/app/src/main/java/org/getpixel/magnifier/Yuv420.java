@@ -18,10 +18,12 @@ public final class Yuv420 {
         final int vPixelStride;
         final int width;
         final int height;
+        final boolean nv21;
 
         public Planes(ByteBuffer y, ByteBuffer u, ByteBuffer v,
                       int yStride, int uStride, int vStride,
-                      int uPixelStride, int vPixelStride, int width, int height) {
+                      int uPixelStride, int vPixelStride, int width, int height,
+                      boolean nv21) {
             this.y = y;
             this.u = u;
             this.v = v;
@@ -32,6 +34,7 @@ public final class Yuv420 {
             this.vPixelStride = vPixelStride;
             this.width = width;
             this.height = height;
+            this.nv21 = nv21;
         }
 
         private boolean interleaved() {
@@ -58,20 +61,18 @@ public final class Yuv420 {
         int v;
         if (p.interleaved()) {
             // Semi-planar NV12 (U first) / NV21 (V first): one UV byte stream used twice.
-            // Some devices expose chroma planes shorter than the frame suggests; neutral
-            // chroma (128) is used where null padding would have been.
+            // Ordering is a fixed per-device property (set via the UV calibration chip),
+            // never guessed per pixel. Some devices expose chroma planes shorter than the
+            // frame suggests; neutral chroma (128) is used where null padding would have been.
             int base = cy * p.uStride + cx * 2;
             int first = safeGet(p.u, base);
             int second = safeGet(p.u, base + 1);
-            // Detect NV21 (V first): chroma values are ~128-centred; heuristic per sample
-            // falls back to NV12 ordering when ambiguous.
-            boolean nv21 = Math.abs(first - 128) < Math.abs(second - 128);
-            if (!nv21) {
-                u = first;
-                v = second;
-            } else {
+            if (p.nv21) {
                 u = second;
                 v = first;
+            } else {
+                u = first;
+                v = second;
             }
         } else {
             int uOff = cy * p.uStride + cx * p.uPixelStride;

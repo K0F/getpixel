@@ -1,16 +1,14 @@
 # getpixel
 
-Read the colour of any pixel on an Android screen.
+Read the colour of a pixel, wherever it is.
 
-Two tools share one capture stack:
+Two tools share one colour stack:
 
 1. **`get_pixel`** – a tiny C CLI that prints the RGBA / `#RRGGBB` of one
    pixel at `(x, y)`. Runs on the device (Termux with root) or from an
    `adb shell`.
-2. **Pixel Magnifier** – an Android app (no root needed) that shows a floating
-   magnifier glass over any app: drag to move, pinch to zoom, the crosshair
-   marks the pixel at the glass centre and live-reads its colour. Long-press
-   copies `#RRGGBB` to the clipboard.
+2. **Pixel Pick** – an Android app that picks **live camera** colours or
+   samples a **gallery photo**, saving picked colours to a persistent palette.
 
 ## get_pixel (C)
 
@@ -40,11 +38,29 @@ adb shell get_pixel 200 400
 Out-of-bounds coordinates and truncated streams are reported; see the exit
 codes in `capscreen.h` (`-1` exec, `-2` header, `-3` bounds, `-4` EOS, `-5` pixel read).
 
-## Pixel Magnifier (Android app)
+## Pixel Pick (Android app)
 
 ```
 magnifier/  – Gradle project (Java, no androidx dependencies)
 ```
+
+An HTML-style **`#rrggbb`** colour picker:
+
+- **Camera** – live preview (CAMERA permission), crosshair + magnified inset at
+  the focus point. **Drag** anywhere to move the crosshair, **pinch** to zoom
+  the lens (1–12×), **tap** to save the focused colour to the palette.
+- **Gallery** – open a photo, **tap** to set the target, press **+ Add** to save.
+  EXIF orientation is honoured; photos are down-scaled for sampling.
+- **Palette** – up to 12 saved colours, persisted across launches. Tap a swatch
+  to copy its hex, long-press to remove. Use the **NV12/NV21** chip if the live
+  colors look swapped (persisted per device), and **Gallery/Camera** to switch.
+
+How it works: `CameraController` streams Camera2 `YUV_420_888`/`RGBA_8888`
+frames into an int-ARGB `FrameBuffer`; `CameraPickerView` draws the rotated,
+letterboxed preview (pure `CamMath` keeps preview and crosshair pixel-exact)
+and a magnified crop via `LensMath`. `Yuv420` decodes chroma with bounds-safe
+reads and a fixed, calibratable NV12/NV21 ordering. `Palette` stores hex codes
+in one `SharedPreferences` string.
 
 ### Build
 
@@ -66,21 +82,13 @@ cd magnifier && ANDROID_HOME=$ANDROID_HOME ./gradlew assembleDebug
 ### Install & use
 
 1. `adb install magnifier/app/build/outputs/apk/debug/app-debug.apk`
-2. Open **Pixel Magnifier**, tap **Start magnifier**.
-3. Grant **Display over other apps** and allow notifications (Android 13+).
-   The system asks whether to start screen capture – allow it.
-4. A glass appears at the top-right. Drag to aim at a pixel, pinch to zoom
-   1–12×, long-press to copy the crosshair pixel's hex value.
+2. Grant **Camera** when asked (first launch).
+3. Point the camera at something; the readout shows the pivot pixel's
+   `#rrggbb`. If red/blue look swapped, tap the **NV21/NV12** chip.
+4. Drag to aim, tap to save; switch to **Gallery** to sample a photo.
 
-Permissions used: screen capture (`MediaProjection`), `SYSTEM_ALERT_WINDOW`
-for the floating glass, `POST_NOTIFICATIONS`; a **foreground service of type
-`mediaProjection`** (required on Android 14+, `AndroidManifest.xml`) keeps the
-capture alive while the glass floats over other apps.
-
-How it works: `ImageReader` (full-resolution RGBA) → int ARGB `FrameBuffer` →
-`LensView` draws a pixel-exact crop (filtering disabled) under a crosshair.
-`ColorUtil.report()` prints the same format as the C CLI, so readouts are
-directly comparable across both tools.
+On MIUI/HyperOS devices the very first install may need *Install via USB*
+enabled in the system USB-install manager.
 
 ### Tests
 
@@ -89,11 +97,15 @@ directly comparable across both tools.
 | `make test`      | C fake-`screencap` stream tests + pure-logic Java tests (javac) |
 | `make apk-test`  | Gradle `testDebugUnitTest` (JUnit wrapper over the same logic)  |
 
+The pure-logic suite (`ColorUtil`, `LensMath`, `CamMath`, `FrameBuffer`,
+`Palette`) runs with plain `javac`/`java` too.
+
 ## F-Droid
 
 `fdroid/org.getpixel.magnifier.yml` is the build recipe:
-- version-tagged releases (`v1.0.0`), built with `subdir: magnifier` +
-  `gradle: assembleRelease`, output `app-release-unsigned.apk`.
+- version-tagged releases (`v1.0.0`, `v1.1.0`, `v1.1.1`, …), built with
+  `subdir: magnifier` + `gradle: assembleRelease`, output
+  `app-release-unsigned.apk`.
 - release builds are unsigned (F-Droid signs with its own key) and shrink-less
   (`minifyEnabled false`) for deterministic output.
 - no binary blobs in the repo; the Gradle wrapper pins the build.
