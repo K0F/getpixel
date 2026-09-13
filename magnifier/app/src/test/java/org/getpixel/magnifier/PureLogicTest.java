@@ -177,6 +177,73 @@ public final class PureLogicTest {
         corner = CamMath.toFrame(1079, 0, 1920, 1080, 1, new int[2]);
         eq("0;0", corner[0] + ";" + corner[1], "display origin q=1");
 
+        // --- ColorMath: sRGB -> XYZ -> CIE L*u*v* ----------------------------
+        double[] xyz = ColorMath.argbToXyz(0xFFFF0000);
+        check(Math.abs(xyz[0] - 0.4124564) < 1e-3, "xyz red X");
+        check(Math.abs(xyz[1] - 0.2126729) < 1e-3, "xyz red Y");
+        check(Math.abs(xyz[2] - 0.0193339) < 1e-3, "xyz red Z");
+
+        double[] luv = ColorMath.argbToLuv(0xFFFF0000, LightSource.D65.white());
+        check(Math.abs(luv[0] - 53.24) < 0.1, "luv red L* ~53.2");
+        check(Math.abs(luv[1] - 175.0) < 0.5, "luv red u* ~175");
+        check(Math.abs(luv[2] - 37.8) < 0.5, "luv red v* ~37.8");
+
+        double[] luvGray = ColorMath.argbToLuv(0xFF808080, LightSource.D65.white());
+        check(Math.abs(luvGray[0] - 53.6) < 0.5, "luv gray L* ~53.6");
+        check(Math.abs(luvGray[1]) < 0.5, "luv gray u* ~0");
+        check(Math.abs(luvGray[2]) < 0.5, "luv gray v* ~0");
+
+        check(Math.abs(ColorMath.srgbToLinear(0.0)) < 1e-9, "linear black");
+        check(Math.abs(ColorMath.srgbToLinear(1.0) - 1.0) < 1e-9, "linear white");
+        double round = ColorMath.linearToSrgb(ColorMath.srgbToLinear(0.2));
+        check(Math.abs(round - 0.2) < 1e-6, "srgb linear round-trip");
+
+        double[] w6500 = ColorMath.cctToWhite(6500);
+        check(w6500[0] > 0.90 && w6500[0] < 1.0, "cct6500 X sane");     // X = x/y ~ 0.968
+        check(w6500[1] == 1.0, "cct white Y normalized");
+        check(w6500[2] > 1.0 && w6500[2] < 1.2, "cct6500 Z sane");
+
+        // --- LightSource -------------------------------------------------------
+        check(LightSource.D65.white()[0] > 0.9 && LightSource.D65.white()[2] > 1.0,
+                "D65 chromaticity sanity");
+        check("D65".equals(LightSource.preset(0, null).name), "preset 0 = D65");
+        check("A".equals(LightSource.preset(2, null).name), "preset 2 = illuminant A");
+        check("BST1".equals(LightSource.preset(3, null).name), "preset 3 = BST1 estimate");
+        LightSource meas = LightSource.measuredWhite(new double[]{0.35, 0.36, 0.29}, "BST1");
+        check(Math.abs(meas.xn - 0.35 / 0.36) < 1e-6, "measuredWhite normalizes Yn=1");
+
+        // --- Calibration: WB fit maps a neutral measured to its reference ---------
+        Calibration cal = new Calibration();
+        check(!cal.isFitted(), "empty calibration not fitted");
+        cal.addSample(0xFFF3F3F2, Calibration.refHexArgb(18)); // white patch measured as white
+        check(cal.isFitted(), "diagonal WB fit active");
+        int applied = cal.apply(0xFFE8E4DA); // warmish measured -> cool toward reference
+        int[] ap = ColorUtil.argb(applied);
+        check(ap[1] >= ap[3], "WB cools warm white toward blue side");
+
+        cal.clear();
+        check(cal.samples() == 0 && !cal.isFitted(), "clear resets calibration");
+        cal.addSample(0xFFE8E4DA, Calibration.refHexArgb(18));
+        // gaining the blue channel, the same warm patch must map to the reference white
+        applied = cal.apply(0xFFE8E4DA);
+        check(Math.abs(((applied >> 16) & 0xFF) - ((applied) & 0xFF)) < 12, "WB balances warm patch");
+
+        // --- Calibration: >=3 patches matrix, encode/decode round-trip -------------
+        Calibration cal3 = new Calibration();
+        cal3.addSample(Calibration.refHexArgb(0), Calibration.refHexArgb(0));
+        cal3.addSample(Calibration.refHexArgb(6), Calibration.refHexArgb(6));
+        cal3.addSample(Calibration.refHexArgb(18), Calibration.refHexArgb(18));
+        check(cal3.isFitted(), "matrix fit active with 3 patches");
+        applied = cal3.apply(Calibration.refHexArgb(6));
+        check(Math.abs(((applied >> 16) & 0xFF) - 214) < 4 && Math.abs(((applied >> 8) & 0xFF) - 126) < 4,
+                "identity-like matrix preserves measured colour");
+        String enc3 = cal3.encode();
+        Calibration cal3b = Calibration.decode(enc3);
+        check(cal3b.isFitted(), "decoded matrix is fitted");
+        check(cal3b.apply(0xFFD67E2C) == cal3.apply(0xFFD67E2C), "decoded matrix same result");
+        check(new Calibration().encode().isEmpty(), "unfitted calibration encodes empty");
+        check(!Calibration.decode("").isFitted(), "empty decodes unfitted");
+
         return failures;
     }
 

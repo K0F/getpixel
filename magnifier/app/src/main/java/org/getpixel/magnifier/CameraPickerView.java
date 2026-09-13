@@ -32,6 +32,18 @@ public class CameraPickerView extends View {
         void onToggleChroma();
 
         void onRotate();
+
+        void onCalToggle();
+
+        void onCalSample(int argbColor);
+
+        void onCalUndo();
+
+        void onLightCycle();
+
+        void onRawCalToggle();
+
+        void onExport();
     }
 
     private static final int INSET_DP = 96;
@@ -63,8 +75,18 @@ public class CameraPickerView extends View {
     private RectF modeButtonRect;
     private RectF chromaButtonRect;
     private RectF rotButtonRect;
+    private RectF calButtonRect;
+    private RectF undoButtonRect;
+    private RectF lightButtonRect;
+    private RectF rawCalButtonRect;
+    private RectF exportButtonRect;
     private boolean nv21Order = true;
     private int rotOffsetQuarters;
+    private Calibration cal;
+    private boolean useCal;
+    private LightSource light = LightSource.bst1Estimate();
+    private boolean calCollecting;
+    private int calCount;
 
     public CameraPickerView(Context context) {
         super(context);
@@ -121,6 +143,16 @@ public class CameraPickerView extends View {
     /** Rotation calibration offset (0..3 quarter-turns) for the ⟳ chip label. */
     public void setRotOffset(int quarters) {
         this.rotOffsetQuarters = ((quarters % 4) + 4) % 4;
+        invalidate();
+    }
+
+    /** Full calibration pipeline state from the activity. */
+    public void setCaliber(Calibration model, boolean applyCal, boolean collecting, int count, LightSource lightSrc) {
+        this.cal = model;
+        this.useCal = applyCal;
+        this.calCollecting = collecting;
+        this.calCount = count;
+        if (lightSrc != null) this.light = lightSrc;
         invalidate();
     }
 
@@ -183,6 +215,38 @@ public class CameraPickerView extends View {
         return new float[]{(focusX() - rect[0]) / sx, (focusY() - rect[1]) / sy};
     }
 
+    /** The colour the readout/save should present: profiled when CAL is on. */
+    private int readoutColor(int rawColor) {
+        if (useCal && cal != null && cal.isFitted()) {
+            return cal.apply(rawColor);
+        }
+        return rawColor;
+    }
+
+    /** 11x11-pixel mean around the crosshair, used for calibration patch taps. */
+    private int sampleTarget() {
+        FrameBuffer f = frame;
+        if (f == null) return 0;
+        int[] mid = focusPixel();
+        int r = 0, g = 0, b = 0, n = 0;
+        for (int dy = -5; dy <= 5; dy++) {
+            int fy = mid[1] + dy;
+            if (fy < 0 || fy >= f.height) continue;
+            int base = fy * f.width;
+            for (int dx = -5; dx <= 5; dx++) {
+                int fx = mid[0] + dx;
+                if (fx < 0 || fx >= f.width) continue;
+                int px = f.pixelAt(fx, fy);
+                r += (px >> 16) & 0xFF;
+                g += (px >> 8) & 0xFF;
+                b += px & 0xFF;
+                n++;
+            }
+        }
+        if (n == 0) return f.pixelAt(mid[0], mid[1]);
+        return 0xFF000000 | ((r / n) << 16) | ((g / n) << 8) | (b / n);
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
@@ -203,15 +267,22 @@ public class CameraPickerView extends View {
 
         int[] mid = focusPixel();
         int focusColor = f.pixelAt(mid[0], mid[1]);
-        String hex = ColorUtil.hexLc(focusColor);
+        int readColor = readoutColor(focusColor);
+        String hex = ColorUtil.hexLc(readColor);
 
         drawInset(canvas, f, rect);
-        drawReadout(canvas, focusColor, hex);
+        drawReadout(canvas, readColor, hex);
         drawCrosshair(canvas);
         drawModeButton(canvas);
-        if (!galleryMode) {
+        if (galleryMode) {
+            drawExportButton(canvas);
+        } else {
             drawChromaButton(canvas);
             drawRotateButton(canvas);
+            drawCalButton(canvas);
+            if (calCollecting && calCount > 0) drawUndoButton(canvas);
+            if (cal != null && cal.isFitted()) drawRawCalButton(canvas);
+            drawLightButton(canvas);
         }
         if (galleryMode) drawAddButton(canvas, hex);
         drawPalette(canvas, hex);
@@ -311,6 +382,13 @@ public class CameraPickerView extends View {
         int[] c = ColorUtil.argb(color);
         textPaint.setColor(0xCCFFFFFF);
         canvas.drawText("R:" + c[1] + "  G:" + c[2] + "  B:" + c[3], cx, dp(142f), textPaint);
+
+        textPaint.setTextSize(dp(12f));
+        textPaint.setColor(0x99FFFFFF);
+        double[] luv = ColorMath.argbToLuv(color, light.white());
+        canvas.drawText(getContext().getString(R.string.picker_luv,
+                ColorMath.fmt(luv[0], 1), ColorMath.fmt(luv[1], 1), ColorMath.fmt(luv[2], 1),
+                light.name), cx, dp(160f), textPaint);
     }
 
     private void drawCrosshair(Canvas canvas) {
@@ -382,6 +460,65 @@ public class CameraPickerView extends View {
         canvas.drawRoundRect(r, dpRound(18f), dpRound(18f), paint);
         textPaint.setColor(0xFFDDE9FF);
         canvas.drawText(label, r.centerX(), r.bottom - dp(10f), textPaint);
+    }
+
+    /** Draws a stacked rounded chip below `prev`; returns the new rect. */
+    private RectF drawChip(Canvas canvas, RectF prev, String label, int chip, int text) {
+        textPaint.setTextSize(dp(13f));
+        textPaint.setTextAlign(Paint.Align.CENTER);
+        float tw = textPaint.measureText(label);
+        float pad = dp(14f);
+        float left = prev == null ? dp(10f) : prev.left;
+        float top = (prev == null ? dp(10f) : prev.bottom) + dp(6f);
+        RectF r = new RectF(left, top, left + tw + pad * 2, top + dp(36f));
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(chip);
+        canvas.drawRoundRect(r, dpRound(18f), dpRound(18f), paint);
+        textPaint.setColor(text);
+        canvas.drawText(label, r.centerX(), r.bottom - dp(10f), textPaint);
+        return r;
+    }
+
+    private void drawCalButton(Canvas canvas) {
+        String label;
+        int chip;
+        int text;
+        if (calCollecting) {
+            label = getContext().getString(R.string.picker_cal_collect, calCount);
+            chip = 0xE68A5A12;
+            text = 0xFFFFF3C2;
+        } else {
+            label = getContext().getString(R.string.picker_cal_idle);
+            chip = 0xE6323B46;
+            text = 0xFFCCE0FF;
+        }
+        calButtonRect = drawChip(canvas, rotButtonRect, label, chip, text);
+    }
+
+    private void drawUndoButton(Canvas canvas) {
+        undoButtonRect = drawChip(canvas, calButtonRect,
+                getContext().getString(R.string.picker_undo), 0xE64A3232, 0xFFFFD0D0);
+    }
+
+    private void drawRawCalButton(Canvas canvas) {
+        boolean out = useCal;
+        rawCalButtonRect = drawChip(canvas, undoButtonRect == null ? calButtonRect : undoButtonRect,
+                getContext().getString(out ? R.string.picker_cal_out : R.string.picker_raw),
+                out ? 0xE6125A2C : 0xE6323B46,
+                out ? 0xFFCCFFD5 : 0xFFE0E0E0);
+    }
+
+    private void drawLightButton(Canvas canvas) {
+        RectF above = rawCalButtonRect == null
+                ? (undoButtonRect == null ? calButtonRect : undoButtonRect)
+                : rawCalButtonRect;
+        lightButtonRect = drawChip(canvas, above,
+                getContext().getString(R.string.picker_light, light.name), 0xE6323B46, 0xFFBDE0FF);
+    }
+
+    private void drawExportButton(Canvas canvas) {
+        exportButtonRect = drawChip(canvas, modeButtonRect,
+                getContext().getString(R.string.picker_export), 0xE6323B46, 0xFFBDE0FF);
     }
 
     private void drawAddButton(Canvas canvas, String hex) {
@@ -458,6 +595,8 @@ public class CameraPickerView extends View {
         String hint;
         if (galleryMode) {
             hint = getContext().getString(R.string.picker_hint_gallery);
+        } else if (calCollecting) {
+            hint = getContext().getString(R.string.picker_hint_cal);
         } else if (n == 0) {
             hint = getContext().getString(R.string.picker_hint_save);
         } else {
@@ -490,13 +629,19 @@ public class CameraPickerView extends View {
         return -1;
     }
 
-    /** True when the press started on a UI control (palette, buttons). */
+/** True when the press started on a UI control (palette, buttons). */
     private boolean inControls(float x, float y) {
         if (swatchAt(x, y) >= 0) return true;
         if (modeButtonRect != null && modeButtonRect.contains(x, y)) return true;
+        if (exportButtonRect != null && galleryMode && exportButtonRect.contains(x, y)) return true;
+        if (galleryMode) return addButtonRect != null && addButtonRect.contains(x, y);
         if (chromaButtonRect != null && chromaButtonRect.contains(x, y)) return true;
         if (rotButtonRect != null && rotButtonRect.contains(x, y)) return true;
-        return galleryMode && addButtonRect != null && addButtonRect.contains(x, y);
+        if (calButtonRect != null && calButtonRect.contains(x, y)) return true;
+        if (undoButtonRect != null && undoButtonRect.contains(x, y)) return true;
+        if (lightButtonRect != null && lightButtonRect.contains(x, y)) return true;
+        if (rawCalButtonRect != null && rawCalButtonRect.contains(x, y)) return true;
+        return false;
     }
 
     @Override
@@ -510,15 +655,20 @@ public class CameraPickerView extends View {
                 downX = event.getX();
                 downY = event.getY();
                 return true;
-            case MotionEvent.ACTION_UP: {
-                float dx = Math.abs(event.getX() - downX);
-                float dy = Math.abs(event.getY() - downY);
+            case MotionEvent.ACTION_MOVE:
                 if (!scaleDetector.isInProgress()) {
-                    if (dx >= dp(10f) || dy >= dp(10f)) {
-                        if (!inControls(downX, downY)) {
-                            moveFocus(event.getX(), event.getY());
-                        }
-                    } else {
+                    float dx = Math.abs(event.getX() - downX);
+                    float dy = Math.abs(event.getY() - downY);
+                    if ((dx >= dp(10f) || dy >= dp(10f)) && !inControls(downX, downY)) {
+                        moveFocus(event.getX(), event.getY());
+                    }
+                }
+                return true;
+            case MotionEvent.ACTION_UP: {
+                if (!scaleDetector.isInProgress()) {
+                    float dx = Math.abs(event.getX() - downX);
+                    float dy = Math.abs(event.getY() - downY);
+                    if (dx < dp(10f) && dy < dp(10f)) {
                         handleTap(event.getX(), event.getY());
                     }
                 }
@@ -535,14 +685,39 @@ public class CameraPickerView extends View {
             if (l != null) l.onToggleMode();
             return;
         }
-        if (chromaButtonRect != null && chromaButtonRect.contains(x, y)) {
+        if (chromaButtonRect != null && !galleryMode && chromaButtonRect.contains(x, y)) {
             Listener l = listener;
             if (l != null) l.onToggleChroma();
             return;
         }
-        if (rotButtonRect != null && rotButtonRect.contains(x, y)) {
+        if (rotButtonRect != null && !galleryMode && rotButtonRect.contains(x, y)) {
             Listener l = listener;
             if (l != null) l.onRotate();
+            return;
+        }
+        if (calButtonRect != null && !galleryMode && calButtonRect.contains(x, y)) {
+            Listener l = listener;
+            if (l != null) l.onCalToggle();
+            return;
+        }
+        if (undoButtonRect != null && !galleryMode && undoButtonRect.contains(x, y)) {
+            Listener l = listener;
+            if (l != null) l.onCalUndo();
+            return;
+        }
+        if (lightButtonRect != null && !galleryMode && lightButtonRect.contains(x, y)) {
+            Listener l = listener;
+            if (l != null) l.onLightCycle();
+            return;
+        }
+        if (rawCalButtonRect != null && !galleryMode && rawCalButtonRect.contains(x, y)) {
+            Listener l = listener;
+            if (l != null) l.onRawCalToggle();
+            return;
+        }
+        if (exportButtonRect != null && galleryMode && exportButtonRect.contains(x, y)) {
+            Listener l = listener;
+            if (l != null) l.onExport();
             return;
         }
         int swatch = swatchAt(x, y);
@@ -565,6 +740,10 @@ public class CameraPickerView extends View {
         Listener l = listener;
         FrameBuffer f = frame;
         if (l == null || f == null) return;
+        if (calCollecting) {
+            l.onCalSample(sampleTarget());
+            return;
+        }
         int[] mid = focusPixel();
         l.onSave(f.pixelAt(mid[0], mid[1]));
     }

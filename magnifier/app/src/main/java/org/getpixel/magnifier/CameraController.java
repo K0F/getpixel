@@ -73,6 +73,12 @@ public final class CameraController {
             cameraId = backCamera();
             CameraCharacteristics cc = cameraManager.getCameraCharacteristics(cameraId);
             int sensorOrientation = cc.get(CameraCharacteristics.SENSOR_ORIENTATION);
+            if ("ruby".equalsIgnoreCase(Build.DEVICE)) {
+                // Redmi Note 12 (ruby): the camx HAL delivers sensor-oriented
+                // LANDSCAPE YUV frames (720x480 measured) with SENSOR_ORIENTATION
+                // 90; those are prescribed and verified, so pin the baseline.
+                sensorOrientation = 90;
+            }
             int displayRotation = displayRotation(context);
             baseRotQuarters = ((sensorOrientation + displayRotation + 360) % 360) / 90;
             running = true;

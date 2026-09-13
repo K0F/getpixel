@@ -23,6 +23,9 @@ $(TESTS)/run_tests: $(TESTS)/test_capscreen.c $(C_SRCS) $(TESTS)/fake_screencap
 # --- Pure-logic Java tests (no Android SDK / JUnit needed) --------------------
 $(JAVA_BUILD)/.stamp: \
 		magnifier/app/src/main/java/$(JAVA_PKG)/ColorUtil.java \
+		magnifier/app/src/main/java/$(JAVA_PKG)/ColorMath.java \
+		magnifier/app/src/main/java/$(JAVA_PKG)/LightSource.java \
+		magnifier/app/src/main/java/$(JAVA_PKG)/Calibration.java \
 		magnifier/app/src/main/java/$(JAVA_PKG)/LensMath.java \
 		magnifier/app/src/main/java/$(JAVA_PKG)/FrameBuffer.java \
 		magnifier/app/src/main/java/$(JAVA_PKG)/CamMath.java \

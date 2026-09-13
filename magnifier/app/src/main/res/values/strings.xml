@@ -4,15 +4,26 @@
 
     <string name="picker_waiting">Starting camera…</string>
     <string name="picker_hint_save">Drag to move the crosshair · tap to save</string>
+    <string name="picker_hint_cal">Tap a card patch, then its reference slot auto-advances</string>
     <string name="picker_hint_swatch">Tap a swatch to copy · Long-press to remove</string>
     <string name="picker_hint_gallery">Tap to set the target · + Add saves</string>
     <string name="picker_add">+ Add %1$s</string>
     <string name="picker_rotate">⟳ %1$d°</string>
+    <string name="picker_cal_idle">Cal</string>
+    <string name="picker_cal_collect">Cal %1$d/24</string>
+    <string name="picker_light">L:%1$s</string>
+    <string name="picker_raw">RAW</string>
+    <string name="picker_cal_out">CAL</string>
+    <string name="picker_undo">⌫</string>
+    <string name="picker_export">Export</string>
+    <string name="picker_luv">L*%1$s  u*%2$s  v*%3$s  ·  %4$s</string>
     <string name="picker_toggle_gallery">Gallery</string>
     <string name="picker_toggle_camera">Camera</string>
     <string name="picker_saved">Saved %1$s</string>
     <string name="picker_copied">Copied %1$s</string>
     <string name="picker_removed">Removed %1$s</string>
+    <string name="picker_patch_added">Patch %1$d/24 fitted</string>
+    <string name="picker_patch_want3">Calibration in progress — 3+ patches for a full profile</string>
     <string name="picker_permission">Camera permission needed for live sampling</string>
     <string name="picker_decode_failed">Could not open that image</string>
 </resources>
